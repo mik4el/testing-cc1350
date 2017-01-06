@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<?ccsproject version="1.0"?>
+<projectOptions>
+	<ccsVersion value="7.0.0"/>
+	<deviceVariant value="Cortex M.CC1350F128"/>
+	<deviceFamily value="TMS470"/>
+	<deviceEndianness value="little"/>
+	<codegenToolVersion value="16.9.0.LTS"/>
+	<isElfFormat value="true"/>
+	<connection value="common/targetdb/connections/TIXDS110_Connection.xml"/>
+	<createSlaveProjects value=""/>
+	<templateProperties value="id=tirtos_builds_CC1350_LAUNCHXL_release_ccs.projectspec.tirtos_builds_CC1350_LAUNCHXL_release_ccs,products=com.ti.SIMPLELINK_CC13X0_SDK,xdcToolsVersion=3_32_01_22_core,target=ti.targets.arm.elf.M3,platform=ti.platforms.simplelink:CC1350F128,buildProfile=release,configuroOptions= --compileOptions &quot; -DDEVICE_FAMILY=cc13x0 &quot;,"/>
+	<origin value="/Users/mikaelandersson/ti/tirtos_builds_CC1350_LAUNCHXL_release_ccs"/>
+	<filesToOpen value=""/>
+</projectOptions>
