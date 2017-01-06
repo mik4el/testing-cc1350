@@ -9,6 +9,7 @@ Testing communication between two cc1350 based on the original TI examples of du
 1. Debug!
 
 ## Todos
+* Clean up code from unused parts
 * Concentrator posts Node data on BLE viewable via TI Sensor tag app
 * Concentrator posts Node data on BLE viewable via standard bluetooth on raspi 
 * Node reads data from LMT70
