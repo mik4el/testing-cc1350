@@ -37,7 +37,7 @@
 #include "easylink/EasyLink.h"
 
 #define RADIO_CONCENTRATOR_ADDRESS     0x00
-#define RADIO_EASYLINK_MODULATION     EasyLink_Phy_625bpsLrm
+#define RADIO_EASYLINK_MODULATION     EasyLink_Phy_625bpsLrm // 'EasyLink_Phy_Custom' for smartrf_settings based modulation
 
 #define RADIO_PACKET_TYPE_ACK_PACKET             0
 #define RADIO_PACKET_TYPE_ADC_SENSOR_PACKET      1

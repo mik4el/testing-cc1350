@@ -44,11 +44,6 @@
 #include <ti/sysbios/knl/Semaphore.h>
 #include <ti/sysbios/knl/Event.h>
 
-#ifdef USE_BIM
-#include <ti/sysbios/knl/Clock.h>
-#include "bim/BimFactoryReset.h"
-#endif
-
 /* Drivers */
 #include <ti/drivers/PIN.h>
 #include <ti/drivers/pin/PINCC26XX.h>
@@ -65,24 +60,10 @@
 /***** Defines *****/
 #define CONCENTRATOR_TASK_STACK_SIZE 1024
 #define CONCENTRATOR_TASK_PRIORITY   3
-
 #define CONCENTRATOR_EVENT_ALL                         0xFFFFFFFF
 #define CONCENTRATOR_EVENT_NEW_ADC_SENSOR_VALUE    (uint32_t)(1 << 0)
-
-#ifdef USE_BIM
-#define CONCENTRATOR_EVENT_FACTORY_RESET           (uint32_t)(1 << 1)
-#endif
-
 #define CONCENTRATOR_MAX_NODES 7
-
 #define CONCENTRATOR_DISPLAY_LINES 10
-
-#ifdef USE_BIM
-/* BLE Load button check timers - check button ever 100ms for 5s*/
-#define NODE_BLE_BOOTLODER_BUTTON_CHECK_TIMER_MS    100
-#define NODE_BLE_BOOTLODER_BUTTON_CHECK_DURATION_S  6
-
-#endif
 
 /***** Type declarations *****/
 struct AdcSensorNode {
@@ -119,12 +100,6 @@ static PIN_Handle buttonPinHandle;
 static PIN_State buttonPinState;
 static ConcentratorAdvertiser advertiser;
 
-#ifdef USE_BIM
-/* Clock for the fast report timeout */
-Clock_Struct bleBootloadBtnCheckClock;     /* not static so you can see in ROV */
-static Clock_Handle bleBootloadBtnCheckClockHandle;
-#endif
-
 /***** Prototypes *****/
 static void concentratorTaskFunction(UArg arg0, UArg arg1);
 static void packetReceivedCallback(union ConcentratorPacket* packet, int8_t rssi);
@@ -134,10 +109,6 @@ static void updateNode(struct AdcSensorNode* node);
 static uint8_t isKnownNodeAddress(uint8_t address);
 void buttonCallback(PIN_Handle handle, PIN_Id pinId);
 
-#ifdef USE_BIM
-void static bleBtnCheckTimerCallback(UArg arg0);
-#endif
-
 /***** Function definitions *****/
 void ConcentratorTask_init(void) {
 
@@ -146,15 +117,6 @@ void ConcentratorTask_init(void) {
     Event_Params_init(&eventParam);
     Event_construct(&concentratorEvent, &eventParam);
     concentratorEventHandle = Event_handle(&concentratorEvent);
-
-#ifdef USE_BIM
-    /* Create clock object which is used for ble bootload button check */
-    Clock_Params clkParams;
-    clkParams.period = 0;
-    clkParams.startFlag = FALSE;
-    Clock_construct(&bleBootloadBtnCheckClock, bleBtnCheckTimerCallback, 1, &clkParams);
-    bleBootloadBtnCheckClockHandle = Clock_handle(&bleBootloadBtnCheckClock);
-#endif
 
     /* Create the concentrator radio protocol task */
     Task_Params_init(&concentratorTaskParams);
@@ -194,12 +156,6 @@ static void concentratorTaskFunction(UArg arg0, UArg arg1)
     {
         Display_printf(hDisplayLcd, 0, 0, "Waiting for nodes...");
     }
-
-#ifdef USE_BIM
-    /* setup timer for ble bootload button check */
-    Clock_setTimeout(bleBootloadBtnCheckClockHandle,
-            NODE_BLE_BOOTLODER_BUTTON_CHECK_TIMER_MS * 1000 / Clock_tickPeriod);
-#endif
 
     buttonPinHandle = PIN_open(&buttonPinState, buttonPinTable);
     if(!buttonPinHandle)
@@ -248,21 +204,6 @@ static void concentratorTaskFunction(UArg arg0, UArg arg1)
             /* Update the values on the LCD */
             updateLcd();
         }
-#ifdef USE_BIM
-        if (events & CONCENTRATOR_EVENT_FACTORY_RESET) {
-
-            Display_control(hDisplayLcd, DISPLAY_CMD_TRANSPORT_CLOSE, NULL);
-
-            BimFactoryReset_applyFactoryImage();
-
-            /* BIM Factory Reset failed, reenable the LCD */
-            Display_control(hDisplayLcd, DISPLAY_CMD_TRANSPORT_OPEN, NULL);
-
-            /* Re-enable interrupts to detect button release. */
-            PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, Board_PIN_BUTTON0 | PIN_IRQ_NEGEDGE);
-            PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, Board_PIN_BUTTON1 | PIN_IRQ_NEGEDGE);
-        }
-#endif
     }
 }
 
@@ -436,17 +377,7 @@ void buttonCallback(PIN_Handle handle, PIN_Id pinId)
     /* Debounce logic, only toggle if the button is still pushed (low) */
     CPUdelay(8000*50);
 
-    if ((PIN_getInputValue(Board_PIN_BUTTON0) == 0) & (PIN_getInputValue(Board_PIN_BUTTON1) == 0))
-    {
-#ifdef USE_BIM
-        //stop button interupts while checking ble bootload button hold
-        PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, Board_PIN_BUTTON0 | PIN_IRQ_DIS);
-        PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, Board_PIN_BUTTON1 | PIN_IRQ_DIS);
-        //start BLE bootloader timer to check pins
-        Clock_start(bleBootloadBtnCheckClockHandle);
-#endif
-    }
-    else if (PIN_getInputValue(Board_PIN_BUTTON0) == 0)
+    if (PIN_getInputValue(Board_PIN_BUTTON0) == 0)
     {
         //select node
         selectedNode++;
@@ -479,31 +410,3 @@ void buttonCallback(PIN_Handle handle, PIN_Id pinId)
         Event_post(concentratorEventHandle, CONCENTRATOR_EVENT_NEW_ADC_SENSOR_VALUE);
     }
 }
-
-#ifdef USE_BIM
-static void bleBtnCheckTimerCallback(UArg arg0)
-{
-    static uint32_t btnHoldCnt = 0;
-
-    if ((PIN_getInputValue(Board_PIN_BUTTON0) == 0) & (PIN_getInputValue(Board_PIN_BUTTON1) == 0))
-    {
-        if ( (++btnHoldCnt * NODE_BLE_BOOTLODER_BUTTON_CHECK_TIMER_MS) >
-            (NODE_BLE_BOOTLODER_BUTTON_CHECK_DURATION_S*1000))
-        {
-            Event_post(concentratorEventHandle, CONCENTRATOR_EVENT_FACTORY_RESET);
-            btnHoldCnt = 0;
-        }
-        else
-        {
-            Clock_start(bleBootloadBtnCheckClockHandle);
-        }
-    }
-    else
-    {
-        btnHoldCnt = 0;
-        /* Re-enable interrupts to detect button release. */
-        PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, Board_PIN_BUTTON0 | PIN_IRQ_NEGEDGE);
-        PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, Board_PIN_BUTTON1 | PIN_IRQ_NEGEDGE);
-    }
-}
-#endif //USE_BIM

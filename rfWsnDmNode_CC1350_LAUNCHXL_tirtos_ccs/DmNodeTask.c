@@ -51,12 +51,7 @@
 
 /* Board Header files */
 #include "Board.h"
-
 #include "SceAdc.h"
-
-#ifdef USE_BIM
-#include "bim/BimFactoryReset.h"
-#endif
 
 #ifdef DEVICE_FAMILY
     #undef DEVICE_FAMILY_PATH
@@ -74,10 +69,6 @@
 #define NODE_EVENT_NEW_ADC_VALUE    (uint32_t)(1 << 0)
 #define NODE_EVENT_UPDATE_LCD       (uint32_t)(1 << 1)
 
-#ifdef USE_BIM
-#define NODE_EVENT_FACTORY_RESET    (uint32_t)(1 << 2)
-#endif
-
 /* A change mask of 0xFF0 means that changes in the lower 4 bits does not trigger a wakeup. */
 #define NODE_ADCTASK_CHANGE_MASK                    0xFF0
 
@@ -87,13 +78,6 @@
 #define NODE_ADCTASK_REPORTINTERVAL_FAST                1
 #define NODE_ADCTASK_REPORTINTERVAL_FAST_DURIATION_MS   30000
 
-#ifdef USE_BIM
-/* BLE Load button check timers - check button ever 100ms for 5s*/
-#define NODE_BLE_BOOTLODER_BUTTON_CHECK_TIMER_MS    100
-#define NODE_BLE_BOOTLODER_BUTTON_CHECK_DURATION_S  6
-#endif
-
-
 /***** Variable declarations *****/
 static Task_Params nodeTaskParams;
 Task_Struct nodeTask;    /* not static so you can see in ROV */
@@ -102,16 +86,6 @@ Event_Struct nodeEvent;  /* not static so you can see in ROV */
 static Event_Handle nodeEventHandle;
 static uint16_t latestAdcValue;
 static int32_t latestInternalTempValue;
-
-/* Clock for the fast report timeout */
-Clock_Struct fastReportTimeoutClock;     /* not static so you can see in ROV */
-static Clock_Handle fastReportTimeoutClockHandle;
-
-#ifdef USE_BIM
-/* Clock for the fast report timeout */
-Clock_Struct bleBootloadBtnCheckClock;     /* not static so you can see in ROV */
-static Clock_Handle bleBootloadBtnCheckClockHandle;
-#endif
 
 /* Pin driver handle */
 static PIN_Handle buttonPinHandle;
@@ -151,36 +125,17 @@ static uint8_t nodeAddress = 0;
 /***** Prototypes *****/
 static void nodeTaskFunction(UArg arg0, UArg arg1);
 static void updateLcd(void);
-void fastReportTimeoutCallback(UArg arg0);
 void adcCallback(uint16_t adcValue);
 void buttonCallback(PIN_Handle handle, PIN_Id pinId);
-
-#ifdef USE_BIM
-void bleBtnCheckTimerCallback(UArg arg0);
-#endif
 
 /***** Function definitions *****/
 void NodeTask_init(void)
 {
-
     /* Create event used internally for state changes */
     Event_Params eventParam;
     Event_Params_init(&eventParam);
     Event_construct(&nodeEvent, &eventParam);
     nodeEventHandle = Event_handle(&nodeEvent);
-
-    /* Create clock object which is used for fast report timeout */
-    Clock_Params clkParams;
-    clkParams.period = 0;
-    clkParams.startFlag = FALSE;
-    Clock_construct(&fastReportTimeoutClock, fastReportTimeoutCallback, 1, &clkParams);
-    fastReportTimeoutClockHandle = Clock_handle(&fastReportTimeoutClock);
-
-#ifdef USE_BIM
-    /* Create clock object which is used for ble bootload button check */
-    Clock_construct(&bleBootloadBtnCheckClock, bleBtnCheckTimerCallback, 1, &clkParams);
-    bleBootloadBtnCheckClockHandle = Clock_handle(&bleBootloadBtnCheckClock);
-#endif
 
     /* Create the node task */
     Task_Params_init(&nodeTaskParams);
@@ -233,19 +188,6 @@ static void nodeTaskFunction(UArg arg0, UArg arg1)
     SceAdc_registerAdcCallback(adcCallback);
     SceAdc_start();
 
-    /* setup timeout for fast report timeout */
-    // Clock_setTimeout(fastReportTimeoutClockHandle,
-    //         NODE_ADCTASK_REPORTINTERVAL_FAST_DURIATION_MS * 1000 / Clock_tickPeriod);
-
-    /* start fast report and timeout */
-    // Clock_start(fastReportTimeoutClockHandle);
-
-#ifdef USE_BIM
-    /* setup timer for ble bootload button check */
-    Clock_setTimeout(bleBootloadBtnCheckClockHandle,
-            NODE_BLE_BOOTLODER_BUTTON_CHECK_TIMER_MS * 1000 / Clock_tickPeriod);
-#endif
-
     buttonPinHandle = PIN_open(&buttonPinState, buttonPinTable);
     if (!buttonPinHandle)
     {
@@ -282,21 +224,6 @@ static void nodeTaskFunction(UArg arg0, UArg arg1)
             /* update display */
             updateLcd();
         }
-#ifdef USE_BIM
-        if (events & NODE_EVENT_FACTORY_RESET) {
-
-            Display_control(hDisplayLcd, DISPLAY_CMD_TRANSPORT_CLOSE, NULL);
-
-            BimFactoryReset_applyFactoryImage();
-
-            /* BIM Factory Reset failed, reenable the LCD */
-            Display_control(hDisplayLcd, DISPLAY_CMD_TRANSPORT_OPEN, NULL);
-
-            /* Re-enable interrupts to detect button release. */
-            PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, Board_PIN_BUTTON0 | PIN_IRQ_NEGEDGE);
-            PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, Board_PIN_BUTTON1 | PIN_IRQ_NEGEDGE);
-        }
-#endif
     }
 
 }
@@ -370,23 +297,7 @@ void buttonCallback(PIN_Handle handle, PIN_Id pinId)
     /* Debounce logic, only toggle if the button is still pushed (low) */
     CPUdelay(8000*50);
 
-
-    if ((PIN_getInputValue(Board_PIN_BUTTON0) == 0) & (PIN_getInputValue(Board_PIN_BUTTON1) == 0)) {
-#ifdef USE_BIM
-        //stop button interupts while checking ble bootload button hold
-        PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, Board_PIN_BUTTON0 | PIN_IRQ_DIS);
-        PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, Board_PIN_BUTTON1 | PIN_IRQ_DIS);
-        //start BLE bootloader timer to check pins
-        Clock_start(bleBootloadBtnCheckClockHandle);
-#endif
-    }
-    else if (PIN_getInputValue(Board_PIN_BUTTON0) == 0)
-    {
-        //start fast report and timeout
-        // SceAdc_setReportInterval(NODE_ADCTASK_REPORTINTERVAL_FAST, NODE_ADCTASK_CHANGE_MASK);
-        // Clock_start(fastReportTimeoutClockHandle);
-    }
-    else if (PIN_getInputValue(Board_PIN_BUTTON1) == 0)
+    if (PIN_getInputValue(Board_PIN_BUTTON1) == 0)
     {
         //cycle between url, uid and none
         advertisementType++;
@@ -400,43 +311,5 @@ void buttonCallback(PIN_Handle handle, PIN_Id pinId)
 
         //Set advertiement type
         nodeRadioTask_setAdvertiserType(advertisementType);
-
-        //start fast report and timeout
-        // SceAdc_setReportInterval(NODE_ADCTASK_REPORTINTERVAL_FAST, NODE_ADCTASK_CHANGE_MASK);
-        // Clock_start(fastReportTimeoutClockHandle);
     }
 }
-
-void fastReportTimeoutCallback(UArg arg0)
-{
-    //stop fast report
-    SceAdc_setReportInterval(NODE_ADCTASK_REPORTINTERVAL_SLOW, NODE_ADCTASK_CHANGE_MASK);
-}
-
-#ifdef USE_BIM
-void bleBtnCheckTimerCallback(UArg arg0)
-{
-    static uint32_t btnHoldCnt = 0;
-
-    if ((PIN_getInputValue(Board_PIN_BUTTON0) == 0) & (PIN_getInputValue(Board_PIN_BUTTON1) == 0))
-    {
-        if ( (++btnHoldCnt * NODE_BLE_BOOTLODER_BUTTON_CHECK_TIMER_MS) >
-            (NODE_BLE_BOOTLODER_BUTTON_CHECK_DURATION_S*1000))
-        {
-            Event_post(nodeEventHandle, NODE_EVENT_FACTORY_RESET);
-            btnHoldCnt = 0;
-        }
-        else
-        {
-            Clock_start(bleBootloadBtnCheckClockHandle);
-        }
-    }
-    else
-    {
-        btnHoldCnt = 0;
-        /* Re-enable interrupts to detect button release. */
-        PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, Board_PIN_BUTTON0 | PIN_IRQ_NEGEDGE);
-        PIN_setConfig(buttonPinHandle, PIN_BM_IRQ, Board_PIN_BUTTON1 | PIN_IRQ_NEGEDGE);
-    }
-}
-#endif //USE_BIM

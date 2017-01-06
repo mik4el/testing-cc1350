@@ -427,13 +427,13 @@ static void rxDoneCallback(EasyLink_RxPacket * rxPacket, EasyLink_Status status)
             latestRxPacket.dmSensorPacket.adcValue = (rxPacket->payload[2] << 8) | rxPacket->payload[3];
             latestRxPacket.dmSensorPacket.batt = (rxPacket->payload[4] << 8) | rxPacket->payload[5];
             latestRxPacket.dmSensorPacket.internalTemp = (rxPacket->payload[6] << 24) |
-                                                                       (rxPacket->payload[7] << 16) |
-                                                                       (rxPacket->payload[8] << 8) |
-                                                                        rxPacket->payload[9];
+                                                         (rxPacket->payload[7] << 16) |
+                                                         (rxPacket->payload[8] << 8) |
+                                                          rxPacket->payload[9];
             latestRxPacket.dmSensorPacket.time100MiliSec = (rxPacket->payload[10] << 24) |
-                                                                       (rxPacket->payload[11] << 16) |
-                                                                       (rxPacket->payload[12] << 8) |
-                                                                        rxPacket->payload[13];
+                                                           (rxPacket->payload[11] << 16) |
+                                                           (rxPacket->payload[12] << 8) |
+                                                            rxPacket->payload[13];
             latestRxPacket.dmSensorPacket.button = rxPacket->payload[14];
 
             /* Signal packet received */
