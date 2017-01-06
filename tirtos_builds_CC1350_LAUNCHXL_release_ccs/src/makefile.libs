@@ -1,6 +1,6 @@
 #
 # This file was generated based on the configuration script:
-#     /Users/mikaelandersson/ti/testing-cc1350/tirtos_builds_CC1350_LAUNCHXL_release_ccs/release.cfg
+#     /Users/mikaelandersson/Code/testing-cc1350/tirtos_builds_CC1350_LAUNCHXL_release_ccs/release.cfg
 #
 # This makefile may be included in other makefiles that need to build
 # the libraries containing the compiled source files generated as
@@ -14,7 +14,7 @@
 #
 # The absolute path to the generated source directory (at the time the
 # sources were generated) is:
-#    /Users/mikaelandersson/ti/testing-cc1350/tirtos_builds_CC1350_LAUNCHXL_release_ccs/src
+#    /Users/mikaelandersson/Code/testing-cc1350/tirtos_builds_CC1350_LAUNCHXL_release_ccs/src
 #
 GEN_SRC_DIR ?= ../src
 
