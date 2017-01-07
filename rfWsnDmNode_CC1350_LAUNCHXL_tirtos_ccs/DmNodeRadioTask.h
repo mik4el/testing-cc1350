@@ -45,26 +45,11 @@ enum NodeRadioOperationStatus {
     NodeRadioStatus_FailedNotConnected,
 };
 
-typedef enum
-{
-    Node_AdertiserNone =     0, //None
-    Node_AdertiserMsUrl =    1, //Interleaved manufacturer Specific
-                                        //Eddystone URL Eddystone TLM
-                                        //advertisement
-    Node_AdertiserMs =       2, //Manufacturer Specific advertisement
-    Node_AdertiserUrl =      3, //Eddystone interleaved URL and TLM
-    Node_AdertiserUid =      4, //Eddystone interleaved UID and TLM
-    Node_AdertiserTypeEnd =  5, //End of advertisemnt type enum's
-}Node_AdertiserType;
-
 /* Initializes the NodeRadioTask and creates all TI-RTOS objects */
 void NodeRadioTask_init(void);
 
 /* Sends an ADC value to the concentrator */
 enum NodeRadioOperationStatus NodeRadioTask_sendAdcData(uint16_t data);
-
-/* Set advertisement type */
-void nodeRadioTask_setAdvertiserType(Node_AdertiserType type);
 
 /* Get node address, return 0 if node address has not been set */
 uint8_t nodeRadioTask_getNodeAddr(void);

@@ -62,7 +62,6 @@
 
 #include "easylink/EasyLink.h"
 #include "RadioProtocol.h"
-#include "seb/SEB.h"
 
 
 /***** Defines *****/
@@ -78,7 +77,6 @@
 #define NODERADIO_MAX_RETRIES 2
 #define NORERADIO_ACK_TIMEOUT_TIME_MS (160)
 
-#define NODE_0M_TXPOWER    -10
 
 /***** Type declarations *****/
 struct RadioOperation {
@@ -104,49 +102,7 @@ static struct RadioOperation currentRadioOperation;
 static uint16_t adcData;
 static uint8_t nodeAddress = 0;
 static struct DualModeInternalTempSensorPacket dmInternalTempSensorPacket;
-static Node_AdertiserType advertiserType = Node_AdertiserMsUrl;
-
-/* The Eddystone UID spec advices to use the first 10 bytes of the sha-1 hash
- * of an owned domain or subdonmian. The subdomain of
- * http://www.ti.com/product/CC1350 = 792f082074ebc132032cad5fdaada66154e14e98 */
-static uint8_t uidNameSpace[10] = {0x79, 0x2f, 0x08, 0x20, 0x74, 0xeb, 0xc1,
-                                   0x32, 0x03, 0x2c};
-
-/* previous Tick count used to calculate uptime for the TLM beacon */
 static uint32_t prevTicks;
-
-/* uid Instance should be set to 6 LSB's of IEEE addr */
-static uint8_t uidInstanceId[6];
-
-/* propreitory advertisement packet */
-static uint8_t localNameAdvertisement[] = {
-        0x02, //Length of this Data section
-        0x01, //<<Flags>>
-        0x02, //LE General Discoverable Mode
-        0x18, //Length of this Data section
-        0x09, //<<Complete local name>>
-        'C', 'C', '1', '3', '5', '0', ' ',
-        'L', 'a', 'u', 'n', 'c', 'h',
-        'p', 'a', 'd', ' ', '-', ' ', '0', 'x', '0', '0'
-        };
-
-/* propreitory advertisement packet */
-static uint8_t propAdvertisement[] = {
-        0x02, //Length of this section
-        0x01, //<<Flags>>
-        0x02, //LE General Discoverable Mode
-        0x06, //Length of this section
-        0xff, //<<Manufacturer Specific Data>>
-        0x0d,
-        0x00,
-        0x03,
-        0x00,
-        0x00}; //BTN state
-
-SimpleBeacon_Frame propAdvFrame;
-SimpleBeacon_Frame localNameAdvFrame;
-
-static uint8_t bleMacAddr[6];
 
 /* Pin driver handle */
 extern PIN_Handle ledPinHandle;
@@ -157,7 +113,6 @@ static void returnRadioOperationStatus(enum NodeRadioOperationStatus status);
 static void sendDmPacket(struct DualModeInternalTempSensorPacket sensorPacket, uint8_t maxNumberOfRetries, uint32_t ackTimeoutMs);
 static void resendPacket();
 static void rxDoneCallback(EasyLink_RxPacket * rxPacket, EasyLink_Status status);
-static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorPacket);
 
 /***** Function definitions *****/
 void NodeRadioTask_init(void) {
@@ -184,10 +139,6 @@ void NodeRadioTask_init(void) {
     nodeRadioTaskParams.priority = NODERADIO_TASK_PRIORITY;
     nodeRadioTaskParams.stack = &nodeRadioTaskStack;
     Task_construct(&nodeRadioTask, nodeRadioTaskFunction, &nodeRadioTaskParams, NULL);
-}
-
-void nodeRadioTask_setAdvertiserType(Node_AdertiserType type) {
-    advertiserType = type;
 }
 
 uint8_t nodeRadioTask_getNodeAddr(void) {
@@ -236,38 +187,6 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
     dmInternalTempSensorPacket.header.sourceAddress = nodeAddress;
     dmInternalTempSensorPacket.header.packetType = RADIO_PACKET_TYPE_DM_SENSOR_PACKET;
 
-    /* initialise the Simple Beacon module called dirrectly for Prop Adv
-     * Set multiclient mode to true
-     */
-    SimpleBeacon_init(true);
-
-    /* initialise the Simple Eddystone Beacon module
-     * Set multiclient mode to true
-     */
-    SEB_init(true);
-
-    SEB_initUrl("https://www.ti.com/product/cc1350", NODE_0M_TXPOWER);
-
-    SimpleBeacon_getIeeeAddr(bleMacAddr);
-
-    propAdvFrame.deviceAddress = bleMacAddr;
-    propAdvFrame.length = sizeof(propAdvertisement);
-    propAdvFrame.pAdvData = propAdvertisement;
-
-    //convert nodeAddress to Ascii hex
-    localNameAdvertisement[27] = ((nodeAddress & 0x0F) < 0xa) ?
-            (nodeAddress & 0x0F) + 0x30:
-            (nodeAddress & 0x0F) - 0xa + 0x41;
-    localNameAdvertisement[26] = (((nodeAddress & 0xF0) >> 4) < 0xa) ?
-            ((nodeAddress & 0xF0) >> 4) + 0x30:
-            ((nodeAddress & 0xF0) >> 4) - 0xa + 0x41;
-    localNameAdvFrame.deviceAddress = bleMacAddr;
-    localNameAdvFrame.length = sizeof(localNameAdvertisement);
-    localNameAdvFrame.pAdvData = localNameAdvertisement;
-
-    /* Initialise previous Tick count used to calculate uptime for the TLM beacon */
-    prevTicks = Clock_getTicks();
-
     /* Enter main task loop */
     while (1)
     {
@@ -297,11 +216,6 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
             dmInternalTempSensorPacket.internalTemp = AONBatMonTemperatureGetDegC();
             dmInternalTempSensorPacket.adcValue = adcData;
             dmInternalTempSensorPacket.button = !PIN_getInputValue(Board_PIN_BUTTON0);
-
-            if (advertiserType != Node_AdertiserNone)
-            {
-                sendBleAdvertisement(dmInternalTempSensorPacket);
-            }
 
             sendDmPacket(dmInternalTempSensorPacket, NODERADIO_MAX_RETRIES, NORERADIO_ACK_TIMEOUT_TIME_MS);
         }
@@ -431,71 +345,6 @@ static void resendPacket()
 
     /* Increase retries by one */
     currentRadioOperation.retriesDone++;
-}
-
-static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorPacket)
-{
-    uint8_t txCnt, chan;
-
-    //Swtich RF switch to 2.4G antenna
-    PIN_setOutputValue(ledPinHandle, Board_DIO1_RFSW, 0);
-
-    //Prepare TLM frame interleaved with URL and UID
-    if ((advertiserType == Node_AdertiserUrl) ||
-        (advertiserType == Node_AdertiserMsUrl))
-    {
-        SEB_initTLM(sensorPacket.batt, sensorPacket.adcValue, sensorPacket.time100MiliSec);
-    }
-
-    if (advertiserType == Node_AdertiserUid)
-    {
-        //Prepare TLM frame interleaved with URL and UID
-        SEB_initTLM(sensorPacket.batt, sensorPacket.adcValue, sensorPacket.time100MiliSec);
-
-        //Set uid intance for the eddystone UID frame
-        uidInstanceId[0] = sensorPacket.header.sourceAddress;
-        SEB_initUID(uidNameSpace, uidInstanceId, NODE_0M_TXPOWER);
-    }
-
-    for (txCnt = 0; txCnt < SimpleBeacon_AdvertisementTimes; txCnt++)
-    {
-        for (chan = 37; chan < 40; chan++)
-        {
-            if ((advertiserType == Node_AdertiserMs) ||
-                (advertiserType == Node_AdertiserMsUrl))
-            {
-                //set BTN value in Prop advertisement
-                propAdvertisement[9] = !PIN_getInputValue(Board_PIN_BUTTON0);
-
-                //advertisement advertise local name
-                SimpleBeacon_sendFrame(localNameAdvFrame,  1, (uint64_t) 1<<chan);
-                //advertisement advertise button value
-                SimpleBeacon_sendFrame(propAdvFrame, 1, (uint64_t) 1<<chan);
-            }
-            if ((advertiserType == Node_AdertiserUrl) ||
-                (advertiserType == Node_AdertiserMsUrl))
-            {
-                SEB_sendFrame(SEB_FrameType_Url, bleMacAddr, 1, (uint64_t) 1<<chan);
-                SEB_sendFrame(SEB_FrameType_Tlm, bleMacAddr, 1, (uint64_t) 1<<chan);
-            }
-            if (advertiserType == Node_AdertiserUid)
-            {
-                SEB_sendFrame(SEB_FrameType_Uuid, bleMacAddr, 1, (uint64_t) 1<<chan);
-                SEB_sendFrame(SEB_FrameType_Tlm, bleMacAddr, 1, (uint64_t) 1<<chan);
-            }
-        }
-        //sleep on all but last advertisement
-        if(txCnt+1 < SimpleBeacon_AdvertisementTimes)
-        {
-            Task_sleep(SimpleBeacon_AdvertisementIntervals[txCnt]);
-        }
-    }
-
-    //Swtich RF switch to Sub1G antenna
-    PIN_setOutputValue(ledPinHandle, Board_DIO1_RFSW, 1);
-
-    /* Toggle activity LED */
-    PIN_setOutputValue(ledPinHandle, NODE_BLE_ACTIVITY_LED,!PIN_getOutputValue(NODE_BLE_ACTIVITY_LED));
 }
 
 static void rxDoneCallback(EasyLink_RxPacket * rxPacket, EasyLink_Status status)

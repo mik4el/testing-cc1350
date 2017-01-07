@@ -99,8 +99,6 @@ static PIN_State ledPinState;
 static Display_Handle hDisplayLcd;
 static Display_Handle hDisplaySerial;
 
-static Node_AdertiserType advertisementType = Node_AdertiserMsUrl;
-
 /* Enable the 3.3V power domain used by the LCD */
 PIN_Config pinTable[] = {
     NODE_SUB1_ACTIVITY_LED | PIN_GPIO_OUTPUT_EN | PIN_GPIO_LOW | PIN_PUSHPULL | PIN_DRVSTR_MAX,
@@ -230,7 +228,6 @@ static void nodeTaskFunction(UArg arg0, UArg arg1)
 
 static void updateLcd(void)
 {
-    char advMode[16] = {0};
 
     /* get node address if not already done */
     if (nodeAddress == 0)
@@ -248,33 +245,8 @@ static void updateLcd(void)
     Display_printf(hDisplaySerial, 0, 0, "\033[2J \033[0;0HNode ID: 0x%02x", nodeAddress);
     Display_printf(hDisplaySerial, 0, 0, "Node ADC Reading: %04d", latestAdcValue);
 
-    if (advertisementType == Node_AdertiserMsUrl)
-    {
-         strncpy(advMode, "BLE MS + URL", 12);
-    }
-    else if (advertisementType == Node_AdertiserMs)
-    {
-         strncpy(advMode, "BLE MS", 6);
-    }
-    else if (advertisementType == Node_AdertiserUrl)
-    {
-         strncpy(advMode, "Eddystone URL", 13);
-    }
-    else if (advertisementType == Node_AdertiserUid)
-    {
-         strncpy(advMode, "Eddystone UID", 13);
-    }
-    else
-    {
-         strncpy(advMode, "None", 4);
-    }
-
     /* print to LCD */
-    Display_printf(hDisplayLcd, 3, 0, "Adv Mode:");
-    Display_printf(hDisplayLcd, 4, 0, "%s", advMode);
-    Display_printf(hDisplayLcd, 6, 0, "Mik4el");
-    /* print to UART */
-    Display_printf(hDisplaySerial, 0, 0, "Advertiser Mode: %s", advMode);
+    Display_printf(hDisplayLcd, 4, 0, "Mik4el");
 }
 
 
@@ -294,22 +266,9 @@ void adcCallback(uint16_t adcValue)
  */
 void buttonCallback(PIN_Handle handle, PIN_Id pinId)
 {
-    /* Debounce logic, only toggle if the button is still pushed (low) */
-    CPUdelay(8000*50);
-
     if (PIN_getInputValue(Board_PIN_BUTTON1) == 0)
     {
-        //cycle between url, uid and none
-        advertisementType++;
-        if (advertisementType == Node_AdertiserTypeEnd)
-        {
-            advertisementType = Node_AdertiserNone;
-        }
-
         /* update display */
         Event_post(nodeEventHandle, NODE_EVENT_UPDATE_LCD);
-
-        //Set advertiement type
-        nodeRadioTask_setAdvertiserType(advertisementType);
     }
 }
