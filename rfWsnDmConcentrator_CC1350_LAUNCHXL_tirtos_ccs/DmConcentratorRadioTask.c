@@ -88,19 +88,10 @@ static struct AckPacket ackPacket;
 static uint8_t concentratorAddress;
 static int8_t latestRssi;
 
-static ConcentratorAdvertiser bleAdveriser = {
+static ConcentratorAdvertiser bleAdvertiser = {
         CONCENTRATOR_ADVERTISE_INVALID,
-        Concentrator_AdertiserNone
+        Concentrator_AdertiserUrl
 };
-
-/* The Eddystone UID spec advices to use the first 10 bytes of the sha-1 hash
- * of an owned domain or subdonmian. The subdomain of
- * http://www.ti.com/product/CC1350 = 792f082074ebc132032cad5fdaada66154e14e98 */
-static uint8_t uidNameSpace[10] = {0x79, 0x2f, 0x08, 0x20, 0x74, 0xeb, 0xc1,
-                                   0x32, 0x03, 0x2c};
-
-/* uid Instance should be set to 6 LSB's of IEEE addr */
-static uint8_t uidInstanceId[6] = {0};
 
 /* propreitory advertisement packet */
 static uint8_t localNameAdvertisement[] = {
@@ -183,8 +174,8 @@ void ConcentratorRadioTask_registerPacketReceivedCallback(ConcentratorRadio_Pack
 }
 
 void ConcentratorRadioTask_setAdvertiser(ConcentratorAdvertiser advertiser) {
-    bleAdveriser.sourceAddress = advertiser.sourceAddress;
-    bleAdveriser.type = advertiser.type;
+    bleAdvertiser.sourceAddress = advertiser.sourceAddress;
+    bleAdvertiser.type = advertiser.type;
 }
 
 static void concentratorRadioTaskFunction(UArg arg0, UArg arg1)
@@ -259,8 +250,8 @@ static void concentratorRadioTaskFunction(UArg arg0, UArg arg1)
             /* Call packet received callback */
             notifyPacketReceived(&latestRxPacket);
 
-            if ( (latestRxPacket.header.sourceAddress == bleAdveriser.sourceAddress) &&
-                 (bleAdveriser.type != Concentrator_AdertiserNone) &&
+            if ( (latestRxPacket.header.sourceAddress == bleAdvertiser.sourceAddress) &&
+                 (bleAdvertiser.type != Concentrator_AdertiserNone) &&
                  (latestRxPacket.header.packetType == RADIO_PACKET_TYPE_DM_SENSOR_PACKET) )
             {
                 uint8_t nodeAddress = latestRxPacket.header.sourceAddress;
@@ -310,46 +301,20 @@ static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorP
 #endif //__CC1350_LAUNCHXL_BOARD_H__
 
     //Prepare TLM frame interleaved with URL and UID
-    if ((bleAdveriser.type == Concentrator_AdertiserUrl) ||
-        (bleAdveriser.type == Concentrator_AdertiserMsUrl))
+    if ((bleAdvertiser.type == Concentrator_AdertiserUrl) ||
+        (bleAdvertiser.type == Concentrator_AdertiserMsUrl))
     {
         SEB_initTLM(sensorPacket.batt, sensorPacket.adcValue, sensorPacket.internalTemp);
-    }
-
-    if(bleAdveriser.type == Concentrator_AdertiserUid)
-    {
-        // Prepare TLM frame interleaved with URL and UID
-        SEB_initTLM(sensorPacket.batt, sensorPacket.adcValue, sensorPacket.time100MiliSec);
-
-        //Set uid intance for the eddystone UID frame
-        uidInstanceId[0] = sensorPacket.header.sourceAddress;
-        SEB_initUID(uidNameSpace, uidInstanceId, CONCENTRATOR_0M_TXPOWER);
     }
 
     for (txCnt = 0; txCnt < SimpleBeacon_AdvertisementTimes; txCnt++)
     {
         for (chan = 37; chan < 40; chan++)
         {
-            if ((bleAdveriser.type == Concentrator_AdertiserMs) ||
-                (bleAdveriser.type == Concentrator_AdertiserMsUrl))
-            {
-                //set BTN value in Prop advertisement
-                propAdvertisement[9] = sensorPacket.button;
-
-                //advertisement advertise local name
-                SimpleBeacon_sendFrame(localNameAdvFrame,  1, (uint64_t) 1<<chan);
-                //advertisement advertise button value
-                SimpleBeacon_sendFrame(propAdvFrame, 1, (uint64_t) 1<<chan);
-            }
-            if ((bleAdveriser.type == Concentrator_AdertiserUrl)  ||
-                (bleAdveriser.type == Concentrator_AdertiserMsUrl))
+            if ((bleAdvertiser.type == Concentrator_AdertiserUrl)  ||
+                (bleAdvertiser.type == Concentrator_AdertiserMsUrl))
             {
                 SEB_sendFrame(SEB_FrameType_Url, bleMacAddr, 1, (uint64_t) 1<<chan);
-                SEB_sendFrame(SEB_FrameType_Tlm, bleMacAddr, 1, (uint64_t) 1<<chan);
-            }
-            if (bleAdveriser.type == Concentrator_AdertiserUid)
-            {
-                SEB_sendFrame(SEB_FrameType_Uuid, bleMacAddr, 1, (uint64_t) 1<<chan);
                 SEB_sendFrame(SEB_FrameType_Tlm, bleMacAddr, 1, (uint64_t) 1<<chan);
             }
         }

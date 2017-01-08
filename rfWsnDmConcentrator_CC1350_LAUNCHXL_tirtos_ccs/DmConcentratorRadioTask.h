@@ -54,7 +54,7 @@ typedef enum
     Concentrator_AdertiserUrl =      3, //Eddystone interleaved URL and TLM
     Concentrator_AdertiserUid =      4, //Eddystone interleaved UID and TLM
     Concentrator_AdertiserTypeEnd =  5, //End of advertisemnt type enum's
-}Concentrator_AdertiserType;
+} Concentrator_AdertiserType;
 
 union ConcentratorPacket {
     struct PacketHeader header;

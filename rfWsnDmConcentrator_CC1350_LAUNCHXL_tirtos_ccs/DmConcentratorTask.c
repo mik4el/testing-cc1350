@@ -117,7 +117,7 @@ void ConcentratorTask_init(void) {
     Event_Params_init(&eventParam);
     Event_construct(&concentratorEvent, &eventParam);
     concentratorEventHandle = Event_handle(&concentratorEvent);
-
+    advertiser.sourceAddress == CONCENTRATOR_ADVERTISE_INVALID;
     /* Create the concentrator radio protocol task */
     Task_Params_init(&concentratorTaskParams);
     concentratorTaskParams.stackSize = CONCENTRATOR_TASK_STACK_SIZE;
@@ -171,15 +171,6 @@ static void concentratorTaskFunction(UArg arg0, UArg arg1)
 
     /* Register a packet received callback with the radio task */
     ConcentratorRadioTask_registerPacketReceivedCallback(packetReceivedCallback);
-
-    /* set defauls for the ble advertiser settings */
-    advertiser.sourceAddress = CONCENTRATOR_ADVERTISE_INVALID;
-    advertiser.type = Concentrator_AdertiserNone;
-
-    ConcentratorRadioTask_setAdvertiser(advertiser);
-
-    //set selected node to 0
-    selectedNode = 0;
 
     /* Enter main task loop */
     while (1)
@@ -245,6 +236,11 @@ static void updateNode(struct AdcSensorNode* node) {
             knownSensorNodes[i].latestInternalTempValue = node->latestInternalTempValue;
             knownSensorNodes[i].latestRssi = node->latestRssi;
             knownSensorNodes[i].button = node->button;
+            selectedNode = i;
+            advertiser.type = Concentrator_AdertiserUrl;
+            advertiser.sourceAddress = knownSensorNodes[i].address;
+            ConcentratorRadioTask_setAdvertiser(advertiser);
+
             break;
         }
     }
@@ -263,6 +259,7 @@ static void addNewNode(struct AdcSensorNode* node) {
     if(advertiser.sourceAddress == CONCENTRATOR_ADVERTISE_INVALID)
     {
         /* set first node as advertiser */
+        advertiser.type = Concentrator_AdertiserUrl;
         advertiser.sourceAddress = node->address;
         ConcentratorRadioTask_setAdvertiser(advertiser);
     }
@@ -288,7 +285,7 @@ static void updateLcd(void) {
           (nodePointer->address != 0) &&
           (currentLcdLine < CONCENTRATOR_DISPLAY_LINES))
     {
-        if ( currentLcdLine == (selectedNode + 1))
+        if ( currentLcdLine == (selectedNode + 3))
         {
             selectedChar = '*';
         }
@@ -366,33 +363,11 @@ void buttonCallback(PIN_Handle handle, PIN_Id pinId)
 
     if (PIN_getInputValue(Board_PIN_BUTTON0) == 0)
     {
-        //select node
-        selectedNode++;
-        if ( (selectedNode >CONCENTRATOR_MAX_NODES) ||
-             (knownSensorNodes[selectedNode].address == 0) )
-        {
-            selectedNode = 0;
-        }
-
-        advertiser.type = Concentrator_AdertiserNone;
-        advertiser.sourceAddress = knownSensorNodes[selectedNode].address;
-        ConcentratorRadioTask_setAdvertiser(advertiser);
-
         //trigger LCD update
         Event_post(concentratorEventHandle, CONCENTRATOR_EVENT_NEW_ADC_SENSOR_VALUE);
     }
     else if (PIN_getInputValue(Board_PIN_BUTTON1) == 0)
     {
-        //cycle between ms, url, uid and none
-        advertiser.type++;
-        if (advertiser.type == Concentrator_AdertiserTypeEnd)
-        {
-            advertiser.type = Concentrator_AdertiserNone;
-        }
-
-        //Set advertiemer
-        ConcentratorRadioTask_setAdvertiser(advertiser);
-
         //trigger LCD update
         Event_post(concentratorEventHandle, CONCENTRATOR_EVENT_NEW_ADC_SENSOR_VALUE);
     }
