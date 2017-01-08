@@ -1,5 +1,14 @@
-# Testing cc1350
-Testing communication between two cc1350 based on the original TI examples of dual mode Node and Concentrator. This is a slightly different setup than the original to test sending more data, e.g. internal temperature, with the long range mode. 
+# Testing cc1350 as Node and Concentrator
+Testing communication between two cc1350 based on the original TI examples of dual mode Node and Concentrator. This is a slightly different setup than the original to be a proof of concept for a bunch of nodes collecting sensor information and sending it over long range mode sub-GHz to a concentrator that in turn sends BLE Eddystone beacons with the received data.
+
+The node:
+* Collects internal temp and ADC
+* Transmits and receives acks for 120b sensor packets over 868 MHz 625bps 14dBm
+* Sends no BLE data.
+
+The concentrator:
+* Receives 120b sensor packets and transmits acks on 868 MHz 625bps
+* Sends BLE Eddystone URL + TLM beacons with latest received sensor data
 
 ## How to setup
 1. Clone repo
@@ -9,8 +18,6 @@ Testing communication between two cc1350 based on the original TI examples of du
 1. Debug!
 
 ## Todos
-* Clean up code from unused parts
-* Concentrator posts Node data on BLE viewable via TI Sensor tag app
-* Concentrator posts Node data on BLE viewable via standard bluetooth on raspi 
-* Node reads data from LMT70
-* Encrypted communication between Node and Concentrator
+* Node reads data from LMT70 on ADC
+* Concentrator correctly sends temp info in Eddystone TLM as 8.8 fixed point notation
+* Sleep Node for minutes between transmissions and then collect data and send. Measure current.
