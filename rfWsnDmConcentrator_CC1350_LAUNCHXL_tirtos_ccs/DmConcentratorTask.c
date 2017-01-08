@@ -209,21 +209,8 @@ static void concentratorTaskFunction(UArg arg0, UArg arg1)
 
 static void packetReceivedCallback(union ConcentratorPacket* packet, int8_t rssi)
 {
-    /* If we recived an ADC sensor packet, for backward compatibility */
-    if (packet->header.packetType == RADIO_PACKET_TYPE_ADC_SENSOR_PACKET)
+    if (packet->header.packetType == RADIO_PACKET_TYPE_DM_SENSOR_PACKET)
     {
-        /* Save the values */
-        latestActiveAdcSensorNode.address = packet->header.sourceAddress;
-        latestActiveAdcSensorNode.latestAdcValue = packet->adcSensorPacket.adcValue;
-        latestActiveAdcSensorNode.button = 0; //no button value in ADC packet
-        latestActiveAdcSensorNode.latestRssi = rssi;
-
-        Event_post(concentratorEventHandle, CONCENTRATOR_EVENT_NEW_ADC_SENSOR_VALUE);
-    }
-    /* If we recived an DualMode ADC sensor packet*/
-    else if(packet->header.packetType == RADIO_PACKET_TYPE_DM_SENSOR_PACKET)
-    {
-
         /* Save the values */
         latestActiveAdcSensorNode.address = packet->header.sourceAddress;
         latestActiveAdcSensorNode.latestAdcValue = packet->dmSensorPacket.adcValue;

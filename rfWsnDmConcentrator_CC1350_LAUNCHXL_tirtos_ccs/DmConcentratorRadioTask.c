@@ -223,7 +223,7 @@ static void concentratorRadioTaskFunction(UArg arg0, UArg arg1)
     SEB_init(true);
 
     /* Set the Eddystone URL */
-    SEB_initUrl("https://www.ti.com/product/cc1350", CONCENTRATOR_0M_TXPOWER);
+    SEB_initUrl("https://m4bd.se/", CONCENTRATOR_0M_TXPOWER);
 
     SimpleBeacon_getIeeeAddr(bleMacAddr);
 
@@ -313,12 +313,12 @@ static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorP
     if ((bleAdveriser.type == Concentrator_AdertiserUrl) ||
         (bleAdveriser.type == Concentrator_AdertiserMsUrl))
     {
-        SEB_initTLM(sensorPacket.batt, sensorPacket.adcValue, sensorPacket.time100MiliSec);
+        SEB_initTLM(sensorPacket.batt, sensorPacket.adcValue, sensorPacket.internalTemp);
     }
 
     if(bleAdveriser.type == Concentrator_AdertiserUid)
     {
-        //Prepare TLM frame interleaved with URL and UID
+        // Prepare TLM frame interleaved with URL and UID
         SEB_initTLM(sensorPacket.batt, sensorPacket.adcValue, sensorPacket.time100MiliSec);
 
         //Set uid intance for the eddystone UID frame
