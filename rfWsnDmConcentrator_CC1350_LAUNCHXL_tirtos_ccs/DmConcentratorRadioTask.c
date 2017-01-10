@@ -70,6 +70,12 @@
 
 #define CONCENTRATOR_0M_TXPOWER    -10
 
+
+#include <stdio.h>
+
+#define FRACT_BITS 8
+#define INT2FIXED(x) (((uint16_t)x) << FRACT_BITS)
+
 /***** Type declarations *****/
 
 
@@ -92,34 +98,6 @@ static ConcentratorAdvertiser bleAdvertiser = {
         CONCENTRATOR_ADVERTISE_INVALID,
         Concentrator_AdertiserUrl
 };
-
-/* propreitory advertisement packet */
-static uint8_t localNameAdvertisement[] = {
-        0x02, //Length of this Data section
-        0x01, //<<Flags>>
-        0x02, //LE General Discoverable Mode
-        0x18, //Length of this Data section
-        0x09, //<<Complete local name>>
-        'C', 'C', '1', '3', '5', '0', ' ',
-        'L', 'a', 'u', 'n', 'c', 'h',
-        'p', 'a', 'd', ' ', '-', ' ', '0', 'x', '0', '0'
-        };
-
-/* propreitory advertisement packet */
-static uint8_t propAdvertisement[] = {
-        0x02, //Length of this section
-        0x01, //<<Flags>>
-        0x02, //LE General Discoverable Mode
-        0x06, //Length of this section
-        0xff, //<<Manufacturer Specific Data>>
-        0x0d,
-        0x00,
-        0x03,
-        0x00,
-        0x00}; //BTN state
-
-SimpleBeacon_Frame propAdvFrame;
-SimpleBeacon_Frame localNameAdvFrame;
 
 static uint8_t bleMacAddr[6];
 
@@ -218,14 +196,6 @@ static void concentratorRadioTaskFunction(UArg arg0, UArg arg1)
 
     SimpleBeacon_getIeeeAddr(bleMacAddr);
 
-    propAdvFrame.deviceAddress = bleMacAddr;
-    propAdvFrame.length = sizeof(propAdvertisement);
-    propAdvFrame.pAdvData = propAdvertisement;
-
-    localNameAdvFrame.deviceAddress = bleMacAddr;
-    localNameAdvFrame.length = sizeof(localNameAdvertisement);
-    localNameAdvFrame.pAdvData = localNameAdvertisement;
-
 #ifdef __CC1350_LAUNCHXL_BOARD_H__
     /* Enable power to RF switch to 2.4G antenna */
     PIN_setOutputValue(ledPinHandle, Board_DIO30_SWPWR, 1);
@@ -254,16 +224,6 @@ static void concentratorRadioTaskFunction(UArg arg0, UArg arg1)
                  (bleAdvertiser.type != Concentrator_AdertiserNone) &&
                  (latestRxPacket.header.packetType == RADIO_PACKET_TYPE_DM_SENSOR_PACKET) )
             {
-                uint8_t nodeAddress = latestRxPacket.header.sourceAddress;
-
-                //convert nodeAddress to Ascii hex
-                localNameAdvertisement[27] = ((nodeAddress & 0x0F) < 0xa) ?
-                        (nodeAddress & 0x0F) + 0x30:
-                        (nodeAddress & 0x0F) - 0xa + 0x41;
-                localNameAdvertisement[26] = (((nodeAddress & 0xF0) >> 4) < 0xa) ?
-                        ((nodeAddress & 0xF0) >> 4) + 0x30:
-                        ((nodeAddress & 0xF0) >> 4) - 0xa + 0x41;
-
                 //send ble avertisement
                 sendBleAdvertisement(latestRxPacket.dmSensorPacket);
             }
@@ -304,7 +264,11 @@ static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorP
     if ((bleAdvertiser.type == Concentrator_AdertiserUrl) ||
         (bleAdvertiser.type == Concentrator_AdertiserMsUrl))
     {
-        SEB_initTLM(sensorPacket.batt, sensorPacket.adcValue, sensorPacket.internalTemp);
+        char url_format[] = "https://m4bd.se/s/%02x/";
+        char url_ready[21];
+        sprintf(url_ready, url_format, sensorPacket.header.sourceAddress);
+        SEB_initUrl(url_ready , CONCENTRATOR_0M_TXPOWER);
+        SEB_initTLM(sensorPacket.batt, INT2FIXED(sensorPacket.internalTemp), sensorPacket.time100MiliSec/10);
     }
 
     for (txCnt = 0; txCnt < SimpleBeacon_AdvertisementTimes; txCnt++)
