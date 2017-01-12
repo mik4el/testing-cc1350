@@ -45,6 +45,7 @@
 /* Drivers */
 #include <ti/drivers/rf/RF.h>
 #include <ti/drivers/PIN.h>
+#include <stdio.h>
 
 /* Board Header files */
 #include "Board.h"
@@ -69,9 +70,6 @@
 #define CONCENTRATOR_BLE_ACTIVITY_LED Board_PIN_LED1
 
 #define CONCENTRATOR_0M_TXPOWER    -10
-
-
-#include <stdio.h>
 
 #define FRACT_BITS 8
 #define INT2FIXED(x) (((uint16_t)x) << FRACT_BITS)
@@ -261,26 +259,18 @@ static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorP
 #endif //__CC1350_LAUNCHXL_BOARD_H__
 
     //Prepare TLM frame interleaved with URL and UID
-    if ((bleAdvertiser.type == Concentrator_AdertiserUrl) ||
-        (bleAdvertiser.type == Concentrator_AdertiserMsUrl))
-    {
-        char url_format[] = "https://m4bd.se/s/%02x/";
-        char url_ready[21];
-        sprintf(url_ready, url_format, sensorPacket.header.sourceAddress);
-        SEB_initUrl(url_ready , CONCENTRATOR_0M_TXPOWER);
-        SEB_initTLM(sensorPacket.batt, INT2FIXED(sensorPacket.internalTemp), sensorPacket.time100MiliSec/10);
-    }
+    char url_format[] = "https://m4bd.se/s/%02x/";
+    char url_ready[21];
+    sprintf(url_ready, url_format, sensorPacket.header.sourceAddress);
+    SEB_initUrl(url_ready , CONCENTRATOR_0M_TXPOWER);
+    SEB_initTLM(sensorPacket.batt, INT2FIXED(sensorPacket.internalTemp), sensorPacket.time100MiliSec/10);
 
     for (txCnt = 0; txCnt < SimpleBeacon_AdvertisementTimes; txCnt++)
     {
         for (chan = 37; chan < 40; chan++)
         {
-            if ((bleAdvertiser.type == Concentrator_AdertiserUrl)  ||
-                (bleAdvertiser.type == Concentrator_AdertiserMsUrl))
-            {
-                SEB_sendFrame(SEB_FrameType_Url, bleMacAddr, 1, (uint64_t) 1<<chan);
-                SEB_sendFrame(SEB_FrameType_Tlm, bleMacAddr, 1, (uint64_t) 1<<chan);
-            }
+            SEB_sendFrame(SEB_FrameType_Url, bleMacAddr, 1, (uint64_t) 1<<chan);
+            SEB_sendFrame(SEB_FrameType_Tlm, bleMacAddr, 1, (uint64_t) 1<<chan);
         }
 
         //sleep on all but last advertisement

@@ -86,6 +86,8 @@ Event_Struct nodeEvent;  /* not static so you can see in ROV */
 static Event_Handle nodeEventHandle;
 static uint16_t latestAdcValue;
 static int32_t latestInternalTempValue;
+static Node_BLEActiveType bleActive = Node_BLEActiveTypeNotActive;
+
 
 /* Pin driver handle */
 static PIN_Handle buttonPinHandle;
@@ -182,7 +184,7 @@ static void nodeTaskFunction(UArg arg0, UArg arg1)
     }
 
     /* Start the SCE ADC task with 1s sample period and reacting to change in ADC value. */
-    SceAdc_init(0x00010000, NODE_ADCTASK_REPORTINTERVAL_FAST, NODE_ADCTASK_CHANGE_MASK);
+    SceAdc_init(0x00100000, NODE_ADCTASK_REPORTINTERVAL_FAST, NODE_ADCTASK_CHANGE_MASK);
     SceAdc_registerAdcCallback(adcCallback);
     SceAdc_start();
 
@@ -208,9 +210,6 @@ static void nodeTaskFunction(UArg arg0, UArg arg1)
 
         /* If new ADC value, send this data */
         if (events & NODE_EVENT_NEW_ADC_VALUE) {
-            /* Toggle activity LED */
-            PIN_setOutputValue(ledPinHandle, NODE_SUB1_ACTIVITY_LED,!PIN_getOutputValue(NODE_SUB1_ACTIVITY_LED));
-
             /* Send ADC value to concentrator */
             NodeRadioTask_sendAdcData(latestAdcValue);
 
@@ -247,8 +246,11 @@ static void updateLcd(void)
 
     /* print to LCD */
     Display_printf(hDisplayLcd, 4, 0, "Mik4el");
-}
 
+    if (bleActive == Node_BLEActiveTypeActive) {
+        Display_printf(hDisplayLcd, 6, 0, "BLE Active");
+    }
+}
 
 void adcCallback(uint16_t adcValue)
 {
@@ -266,9 +268,20 @@ void adcCallback(uint16_t adcValue)
  */
 void buttonCallback(PIN_Handle handle, PIN_Id pinId)
 {
-    if (PIN_getInputValue(Board_PIN_BUTTON1) == 0)
+    /* Only toggle if the button is still pushed (low) */
+    CPUdelay(8000*50);
+
+    if (PIN_getInputValue(Board_PIN_BUTTON0) == 0)
     {
-        /* update display */
+        if (bleActive == Node_BLEActiveTypeActive) {
+            bleActive = Node_BLEActiveTypeNotActive;
+        } else {
+            bleActive = Node_BLEActiveTypeActive;
+        }
         Event_post(nodeEventHandle, NODE_EVENT_UPDATE_LCD);
+        NodeRadioTask_toggleBLE();
+        if (bleActive == Node_BLEActiveTypeActive) {
+            Event_post(nodeEventHandle, NODE_EVENT_NEW_ADC_VALUE);
+        }
     }
 }

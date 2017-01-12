@@ -41,6 +41,9 @@
 #include <ti/sysbios/knl/Clock.h>
 #include <ti/drivers/Power.h>
 #include <ti/drivers/power/PowerCC26XX.h>
+#include <seb/SEB.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 /* Drivers */
 #include <ti/drivers/rf/RF.h>
@@ -49,7 +52,6 @@
 /* Board Header files */
 #include "Board.h"
 
-#include <stdlib.h>
 #ifdef DEVICE_FAMILY
     #undef DEVICE_FAMILY_PATH
     #define DEVICE_FAMILY_PATH(x) <ti/devices/DEVICE_FAMILY/x>
@@ -73,9 +75,15 @@
 #define RADIO_EVENT_DATA_ACK_RECEIVED   (uint32_t)(1 << 1)
 #define RADIO_EVENT_ACK_TIMEOUT         (uint32_t)(1 << 2)
 #define RADIO_EVENT_SEND_FAIL           (uint32_t)(1 << 3)
+#define RADIO_EVENT_SEND_BLE_BEACON     (uint32_t)(1 << 4)
 
 #define NODERADIO_MAX_RETRIES 2
 #define NORERADIO_ACK_TIMEOUT_TIME_MS (160)
+
+#define NODE_0M_TXPOWER    -10
+
+#define FRACT_BITS 8
+#define INT2FIXED(x) (((uint16_t)x) << FRACT_BITS)
 
 
 /***** Type declarations *****/
@@ -86,7 +94,6 @@ struct RadioOperation {
     uint32_t ackTimeoutMs;
     enum NodeRadioOperationStatus result;
 };
-
 
 /***** Variable declarations *****/
 static Task_Params nodeRadioTaskParams;
@@ -103,6 +110,8 @@ static uint16_t adcData;
 static uint8_t nodeAddress = 0;
 static struct DualModeInternalTempSensorPacket dmInternalTempSensorPacket;
 static uint32_t prevTicks;
+static uint8_t bleMacAddr[6];
+static Node_AdvertiserType advertiserType = Node_AdvertiserNone;
 
 /* Pin driver handle */
 extern PIN_Handle ledPinHandle;
@@ -113,8 +122,17 @@ static void returnRadioOperationStatus(enum NodeRadioOperationStatus status);
 static void sendDmPacket(struct DualModeInternalTempSensorPacket sensorPacket, uint8_t maxNumberOfRetries, uint32_t ackTimeoutMs);
 static void resendPacket();
 static void rxDoneCallback(EasyLink_RxPacket * rxPacket, EasyLink_Status status);
+static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorPacket);
 
 /***** Function definitions *****/
+void NodeRadioTask_toggleBLE(void) {
+    if (advertiserType == Node_AdvertiserUrl) {
+        advertiserType = Node_AdvertiserNone;
+    } else {
+        advertiserType = Node_AdvertiserUrl;
+    }
+}
+
 void NodeRadioTask_init(void) {
 
     /* Create semaphore used for exclusive radio access */
@@ -147,7 +165,7 @@ uint8_t nodeRadioTask_getNodeAddr(void) {
 
 static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
 {
-    /* Set mulitclient mode for EasyLink */
+    /* Set multiclient mode for EasyLink */
     EasyLink_setCtrl(EasyLink_Ctrl_MultiClient_Mode, 1);
 
     /* Initialize EasyLink */
@@ -157,7 +175,7 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
     }
 
 
-    /* If you wich to use a frequency other than the default use
+    /* If you wish to use a frequency other than the default use
      * the below API
      * EasyLink_setFrequency(868000000);
      */
@@ -187,6 +205,22 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
     dmInternalTempSensorPacket.header.sourceAddress = nodeAddress;
     dmInternalTempSensorPacket.header.packetType = RADIO_PACKET_TYPE_DM_SENSOR_PACKET;
 
+    /* initialise the Simple Beacon module called dirrectly for Prop Adv
+     * Set multiclient mode to true
+     */
+    SimpleBeacon_init(true);
+
+    /* initialise the Simple Eddystone Beacon module
+     * Set multiclient mode to true
+     */
+    SEB_init(true);
+    SimpleBeacon_getIeeeAddr(bleMacAddr);
+
+#ifdef __CC1350_LAUNCHXL_BOARD_H__
+    /* Enable power to RF switch to 2.4G antenna */
+    PIN_setOutputValue(ledPinHandle, Board_DIO30_SWPWR, 1);
+#endif //__CC1350_LAUNCHXL_BOARD_H__
+
     /* Enter main task loop */
     while (1)
     {
@@ -203,12 +237,12 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
             if (currentTicks > prevTicks)
             {
                 //calculate time since last reading in 0.1s units
-                dmInternalTempSensorPacket.time100MiliSec += ((currentTicks - prevTicks) * Clock_tickPeriod) / 100000;
+                dmInternalTempSensorPacket.time100MiliSec = ((currentTicks - prevTicks) * Clock_tickPeriod) / 100000;
             }
             else
             {
                 //calculate time since last reading in 0.1s units
-                dmInternalTempSensorPacket.time100MiliSec += ((prevTicks - currentTicks) * Clock_tickPeriod) / 100000;
+                dmInternalTempSensorPacket.time100MiliSec = ((prevTicks - currentTicks) * Clock_tickPeriod) / 100000;
             }
             prevTicks = currentTicks;
 
@@ -248,12 +282,18 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
             returnRadioOperationStatus(NodeRadioStatus_Failed);
         }
 
+        if (advertiserType == Node_AdvertiserUrl) {
+            sendBleAdvertisement(dmInternalTempSensorPacket);
+        }
     }
 }
 
 enum NodeRadioOperationStatus NodeRadioTask_sendAdcData(uint16_t data)
 {
     enum NodeRadioOperationStatus status;
+
+    /* Toggle activity LED */
+    PIN_setOutputValue(ledPinHandle, NODE_SUB1_ACTIVITY_LED,!PIN_getOutputValue(NODE_SUB1_ACTIVITY_LED));
 
     /* Get radio access sempahore */
     Semaphore_pend(radioAccessSemHandle, BIOS_WAIT_FOREVER);
@@ -272,6 +312,9 @@ enum NodeRadioOperationStatus NodeRadioTask_sendAdcData(uint16_t data)
 
     /* Return radio access semaphore */
     Semaphore_post(radioAccessSemHandle);
+
+    /* Toggle activity LED */
+    PIN_setOutputValue(ledPinHandle, NODE_SUB1_ACTIVITY_LED,!PIN_getOutputValue(NODE_SUB1_ACTIVITY_LED));
 
     return status;
 }
@@ -383,4 +426,47 @@ static void rxDoneCallback(EasyLink_RxPacket * rxPacket, EasyLink_Status status)
         Event_post(radioOperationEventHandle, RADIO_EVENT_ACK_TIMEOUT);
     }
 
+}
+
+static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorPacket)
+{
+    uint8_t txCnt, chan;
+
+    /* Toggle activity LED */
+    PIN_setOutputValue(ledPinHandle, NODE_BLE_ACTIVITY_LED,!PIN_getOutputValue(NODE_BLE_ACTIVITY_LED));
+
+#ifdef __CC1350_LAUNCHXL_BOARD_H__
+    //Swtich RF switch to 2.4G antenna
+    PIN_setOutputValue(ledPinHandle, Board_DIO1_RFSW, 0);
+#endif //__CC1350_LAUNCHXL_BOARD_H__
+
+    //Prepare TLM frame interleaved with URL and UID
+    char url_format[] = "https://m4bd.se/s/%02x/";
+    char url_ready[21];
+    sprintf(url_ready, url_format, nodeAddress);
+    SEB_initUrl(url_ready , NODE_0M_TXPOWER);
+    SEB_initTLM(sensorPacket.batt, INT2FIXED(sensorPacket.internalTemp), sensorPacket.time100MiliSec/10);
+
+    for (txCnt = 0; txCnt < SimpleBeacon_AdvertisementTimes; txCnt++)
+    {
+        for (chan = 37; chan < 40; chan++)
+        {
+            SEB_sendFrame(SEB_FrameType_Url, bleMacAddr, 1, (uint64_t) 1<<chan);
+            SEB_sendFrame(SEB_FrameType_Tlm, bleMacAddr, 1, (uint64_t) 1<<chan);
+        }
+
+        //sleep on all but last advertisement
+        if(txCnt+1 < SimpleBeacon_AdvertisementTimes)
+        {
+            Task_sleep(SimpleBeacon_AdvertisementIntervals[txCnt]);
+        }
+    }
+
+#ifdef __CC1350_LAUNCHXL_BOARD_H__
+    //Swtich RF switch to Sub1G antenna
+    PIN_setOutputValue(ledPinHandle, Board_DIO1_RFSW, 1);
+#endif //__CC1350_LAUNCHXL_BOARD_H__
+
+    /* Toggle activity LED */
+    PIN_setOutputValue(ledPinHandle, NODE_BLE_ACTIVITY_LED,!PIN_getOutputValue(NODE_BLE_ACTIVITY_LED));
 }

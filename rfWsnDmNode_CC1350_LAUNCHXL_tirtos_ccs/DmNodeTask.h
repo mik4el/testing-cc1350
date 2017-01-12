@@ -36,4 +36,11 @@
 /* Initializes the Node Task and creates all TI-RTOS objects */
 void NodeTask_init(void);
 
+typedef enum
+{
+    Node_BLEActiveTypeNotActive =     0,
+    Node_BLEActiveTypeActive =      1,
+    Node_BLEActiveTypeEnd =  2,
+} Node_BLEActiveType;
+
 #endif /* TASKS_NODETASK_H_ */

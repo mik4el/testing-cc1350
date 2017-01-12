@@ -38,6 +38,7 @@
 
 #define NODE_SUB1_ACTIVITY_LED Board_PIN_LED0
 #define NODE_BLE_ACTIVITY_LED Board_PIN_LED1
+#define NODE_ADVERTISE_INVALID  0x00
 
 enum NodeRadioOperationStatus {
     NodeRadioStatus_Success,
@@ -45,11 +46,21 @@ enum NodeRadioOperationStatus {
     NodeRadioStatus_FailedNotConnected,
 };
 
+typedef enum
+{
+    Node_AdvertiserNone =     0, //None
+    Node_AdvertiserUrl =      1, //Eddystone interleaved URL and TLM
+    Node_AdvertiserTypeEnd =  2, //End of advertisemnt type enum's
+} Node_AdvertiserType;
+
 /* Initializes the NodeRadioTask and creates all TI-RTOS objects */
 void NodeRadioTask_init(void);
 
 /* Sends an ADC value to the concentrator */
 enum NodeRadioOperationStatus NodeRadioTask_sendAdcData(uint16_t data);
+
+/* Sends a BLE beacon with latest data */
+void NodeRadioTask_toggleBLE();
 
 /* Get node address, return 0 if node address has not been set */
 uint8_t nodeRadioTask_getNodeAddr(void);
