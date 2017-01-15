@@ -93,12 +93,12 @@ static struct SensorNodeRX* lastAddedSensorNodeRX = knownSensorNodeRXs;
 
 static ConcentratorAdvertiser bleAdvertiser = {
         CONCENTRATOR_ADVERTISE_INVALID,
-        Concentrator_AdertiserUrl
+        Concentrator_AdvertiserUrl
 };
 
 struct SensorNodeRX {
     uint8_t address;
-    uint32_t timeSinceLastRX;
+    uint32_t timeForLastRX;
 };
 
 static uint8_t bleMacAddr[6];
@@ -112,6 +112,7 @@ static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorP
 static void addNewNodeRX(struct SensorNodeRX* node);
 static void updateNodeRX(struct SensorNodeRX* node);
 static uint8_t isKnownNodeAddress(uint8_t address);
+static uint32_t timeForLastRXForAdress(uint8_t address);
 
 /* Pin driver handle */
 static PIN_Handle ledPinHandle;
@@ -172,7 +173,6 @@ static void concentratorRadioTaskFunction(UArg arg0, UArg arg1)
         System_abort("EasyLink_init failed");
     }
 
-
     /* If you wish to use a frequency other than the default use
      * the below API
      * EasyLink_setFrequency(868000000);
@@ -211,6 +211,8 @@ static void concentratorRadioTaskFunction(UArg arg0, UArg arg1)
         System_abort("EasyLink_receiveAsync failed");
     }
 
+    EasyLink_setCtrl(EasyLink_Ctrl_AsyncRx_TimeOut, EasyLink_ms_To_RadioTime(1000));
+
     while (1)
     {
         uint32_t events = Event_pend(radioOperationEventHandle, 0, RADIO_EVENT_ALL, BIOS_WAIT_FOREVER);
@@ -218,6 +220,10 @@ static void concentratorRadioTaskFunction(UArg arg0, UArg arg1)
         /* If valid packet received */
         if (events & RADIO_EVENT_VALID_PACKET_RECEIVED)
         {
+
+            /* toggle Sub1G Activity LED */
+            PIN_setOutputValue(ledPinHandle, CONCENTRATOR_SUB1_ACTIVITY_LED,
+                               !PIN_getOutputValue(CONCENTRATOR_SUB1_ACTIVITY_LED));
 
             /* Send ack packet */
             sendAck(latestRxPacket.header.sourceAddress);
@@ -236,14 +242,6 @@ static void concentratorRadioTaskFunction(UArg arg0, UArg arg1)
                 addNewNodeRX(&latestActiveSensorNodeRX);
             }
 
-            if ( (latestRxPacket.header.sourceAddress == bleAdvertiser.sourceAddress) &&
-                 (bleAdvertiser.type != Concentrator_AdertiserNone) &&
-                 (latestRxPacket.header.packetType == RADIO_PACKET_TYPE_DM_SENSOR_PACKET) )
-            {
-                //send ble advertisement
-                sendBleAdvertisement(latestRxPacket.dmSensorPacket);
-            }
-
             /* Go back to RX */
             if (EasyLink_receiveAsync(rxDoneCallback, 0) != EasyLink_Status_Success)
             {
@@ -252,7 +250,15 @@ static void concentratorRadioTaskFunction(UArg arg0, UArg arg1)
 
             /* toggle Sub1G Activity LED */
             PIN_setOutputValue(ledPinHandle, CONCENTRATOR_SUB1_ACTIVITY_LED,
-                    !PIN_getOutputValue(CONCENTRATOR_SUB1_ACTIVITY_LED));
+                               !PIN_getOutputValue(CONCENTRATOR_SUB1_ACTIVITY_LED));
+
+        }
+
+        if ( (bleAdvertiser.type != Concentrator_AdvertiserNone) &&
+             (latestRxPacket.header.packetType == RADIO_PACKET_TYPE_DM_SENSOR_PACKET) )
+        {
+            //send ble advertisement
+            sendBleAdvertisement(latestRxPacket.dmSensorPacket);
         }
 
         /* If invalid packet received */
@@ -264,6 +270,7 @@ static void concentratorRadioTaskFunction(UArg arg0, UArg arg1)
                 System_abort("EasyLink_receiveAsync failed");
             }
         }
+
     }
 }
 
@@ -281,12 +288,24 @@ static uint8_t isKnownNodeAddress(uint8_t address) {
     return found;
 }
 
+static uint32_t timeForLastRXForAdress(uint8_t address) {
+    uint8_t i;
+    for (i = 0; i < CONCENTRATOR_MAX_NODES; i++)
+    {
+        if (knownSensorNodeRXs[i].address == address)
+        {
+            return knownSensorNodeRXs[i].timeForLastRX;
+        }
+    }
+    return 0;
+}
+
 static void updateNodeRX(struct SensorNodeRX* node) {
     uint8_t i;
     for (i = 0; i < CONCENTRATOR_MAX_NODES; i++) {
         if (knownSensorNodeRXs[i].address == node->address)
         {
-            knownSensorNodeRXs[i].timeSinceLastRX = 0; // ToDo: Change to current millis!
+            knownSensorNodeRXs[i].timeForLastRX = (Clock_getTicks() * Clock_tickPeriod) / 1000000;
             break;
         }
     }
@@ -306,19 +325,27 @@ static void addNewNodeRX(struct SensorNodeRX* node) {
 
 static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorPacket)
 {
-    uint8_t txCnt, chan;
 
 #ifdef __CC1350_LAUNCHXL_BOARD_H__
     //Swtich RF switch to 2.4G antenna
     PIN_setOutputValue(ledPinHandle, Board_DIO1_RFSW, 0);
 #endif //__CC1350_LAUNCHXL_BOARD_H__
 
+    /* Toggle activity LED */
+    PIN_setOutputValue(ledPinHandle, CONCENTRATOR_BLE_ACTIVITY_LED,!PIN_getOutputValue(CONCENTRATOR_BLE_ACTIVITY_LED));
+
     // Prepare TLM frame
+    uint8_t txCnt, chan;
     char url_format[] = "https://m4bd.se/s/%02x/";
     char url_ready[21];
     sprintf(url_ready, url_format, sensorPacket.header.sourceAddress);
     SEB_initUrl(url_ready , CONCENTRATOR_0M_TXPOWER);
-    SEB_initTLM(sensorPacket.batt, INT2FIXED(sensorPacket.internalTemp), sensorPacket.time100MiliSec/10); // change to be time since last RX for node
+    uint32_t timeSinceLastRx = 0;
+    if (timeForLastRXForAdress(sensorPacket.header.sourceAddress)!=0) {
+        timeSinceLastRx = ((Clock_getTicks() * Clock_tickPeriod) / 1000000) - timeForLastRXForAdress(sensorPacket.header.sourceAddress);
+    }
+
+    SEB_initTLM(sensorPacket.batt, INT2FIXED(sensorPacket.internalTemp), timeSinceLastRx);
 
     for (txCnt = 0; txCnt < SimpleBeacon_AdvertisementTimes; txCnt++)
     {
@@ -366,6 +393,9 @@ static void notifyPacketReceived(union ConcentratorPacket* latestRxPacket)
     if (packetReceivedCallback)
     {
         packetReceivedCallback(latestRxPacket, latestRssi);
+    }
+    if (latestRxPacket->header.packetType == RADIO_PACKET_TYPE_DM_SENSOR_PACKET) {
+        latestActiveSensorNodeRX.address = latestRxPacket->header.sourceAddress;
     }
 }
 

@@ -46,15 +46,10 @@ enum ConcentratorRadioOperationStatus {
 
 typedef enum
 {
-    Concentrator_AdertiserNone =     0, //None
-    Concentrator_AdertiserMsUrl =    1, //Interleaved manufacturer Specific
-                                        //Eddystone URL Eddystone TLM
-                                        //advertisement
-    Concentrator_AdertiserMs =       2, //Manufacturer Specific advertisement
-    Concentrator_AdertiserUrl =      3, //Eddystone interleaved URL and TLM
-    Concentrator_AdertiserUid =      4, //Eddystone interleaved UID and TLM
-    Concentrator_AdertiserTypeEnd =  5, //End of advertisemnt type enum's
-} Concentrator_AdertiserType;
+    Concentrator_AdvertiserNone =   0, //None
+    Concentrator_AdvertiserUrl =    1, // Eddystone URL
+    Concentrator_AdvertiserTypeEnd = 2, //End of advertisement type enum's
+} Concentrator_AdvertiserType;
 
 union ConcentratorPacket {
     struct PacketHeader header;
@@ -65,7 +60,7 @@ union ConcentratorPacket {
 typedef struct
 {
     uint8_t sourceAddress;
-    Concentrator_AdertiserType type;
+    Concentrator_AdvertiserType type;
 } ConcentratorAdvertiser;
 
 typedef void (*ConcentratorRadio_PacketReceivedCallback)(union ConcentratorPacket* packet, int8_t rssi);

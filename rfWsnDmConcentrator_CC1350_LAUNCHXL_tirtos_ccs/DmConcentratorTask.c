@@ -117,7 +117,7 @@ void ConcentratorTask_init(void) {
     Event_Params_init(&eventParam);
     Event_construct(&concentratorEvent, &eventParam);
     concentratorEventHandle = Event_handle(&concentratorEvent);
-    advertiser.sourceAddress == CONCENTRATOR_ADVERTISE_INVALID;
+    advertiser.sourceAddress = CONCENTRATOR_ADVERTISE_INVALID;
     /* Create the concentrator radio protocol task */
     Task_Params_init(&concentratorTaskParams);
     concentratorTaskParams.stackSize = CONCENTRATOR_TASK_STACK_SIZE;
@@ -237,7 +237,7 @@ static void updateNode(struct AdcSensorNode* node) {
             knownSensorNodes[i].latestRssi = node->latestRssi;
             knownSensorNodes[i].button = node->button;
             selectedNode = i;
-            advertiser.type = Concentrator_AdertiserUrl;
+            advertiser.type = Concentrator_AdvertiserUrl;
             advertiser.sourceAddress = knownSensorNodes[i].address;
             ConcentratorRadioTask_setAdvertiser(advertiser);
 
@@ -259,7 +259,7 @@ static void addNewNode(struct AdcSensorNode* node) {
     if(advertiser.sourceAddress == CONCENTRATOR_ADVERTISE_INVALID)
     {
         /* set first node as advertiser */
-        advertiser.type = Concentrator_AdertiserUrl;
+        advertiser.type = Concentrator_AdvertiserUrl;
         advertiser.sourceAddress = node->address;
         ConcentratorRadioTask_setAdvertiser(advertiser);
     }
@@ -323,25 +323,9 @@ static void updateLcd(void) {
         }
 
 
-        if (advertiser.type == Concentrator_AdertiserMsUrl)
-        {
-             strncpy(advMode, "BLE MS + URL", 12);
-        }
-        else if (advertiser.type == Concentrator_AdertiserMs)
-        {
-             strncpy(advMode, "BLE MS", 6);
-        }
-        else if (advertiser.type == Concentrator_AdertiserUrl)
+        if (advertiser.type == Concentrator_AdvertiserUrl)
         {
              strncpy(advMode, "Eddystone URL", 13);
-        }
-        else if (advertiser.type == Concentrator_AdertiserUid)
-        {
-             strncpy(advMode, "Eddystone UID", 13);
-        }
-        else
-        {
-             strncpy(advMode, "BLE None", 8);
         }
 
         /* print to LCD */
