@@ -44,8 +44,8 @@ typedef void(*SceAdc_adcCallback)(uint16_t adcValue);
  * This loads the SCE with the ADC sampling task, sets the sampling time and the ADC change mask.
  * The ADC change mask can be used to mask the bits that needs to be changed for the ADC task to
  * signal, and potentially wake up, the CM3 with a new sensor value update.
- * The Minimun Report Interval will be used to send sensor data on a minimum interval incase sensor
- * data does not change within this time. The Minimun Report Interval can be set to 0 if no minimum
+ * The Minimum Report Interval will be used to send sensor data on a minimum interval in case sensor
+ * data does not change within this time. The Minimum Report Interval can be set to 0 if no minimum
  * report interval is required.
  *
  * Note that this does not start the task, see SceAdc_start for starting a task.
@@ -56,8 +56,8 @@ void SceAdc_init(uint32_t samplingTime, uint32_t minReportInterval, uint16_t adc
  *
  * The ADC change mask can be used to mask the bits that needs to be changed for the ADC task to
  * signal, and potentially wake up, the CM3 with a new sensor value update.
- * The Minimun Report Interval will be used to send sensor data on a minimum interval incase sensor
- * data does not change within this time. The Minimun Report Interval can be set to 0 if no minimum
+ * The Minimum Report Interval will be used to send sensor data on a minimum interval in case sensor
+ * data does not change within this time. The Minimum Report Interval can be set to 0 if no minimum
  * report interval is required.
  *
  * Note that this can be called after the task has been started.

@@ -67,7 +67,7 @@ void SceAdc_init(uint32_t samplingTime, uint32_t minReportInterval, uint16_t adc
 }
 
 void SceAdc_setReportInterval(uint32_t minReportInterval, uint16_t adcChangeMask) {
-    //Set the repot inteval and min change in the SC config structure
+    //Set the report interval and min change in the SC config structure
     SCIF_ADC_SAMPLE_CFG_T* pCfg = scifGetTaskStruct(SCIF_ADC_SAMPLE_TASK_ID, SCIF_STRUCT_CFG);
     pCfg->changeMask = adcChangeMask;
     //Set minimum report interval in units of samplingTime
