@@ -57,6 +57,7 @@
     #undef DEVICE_FAMILY_PATH
     #define DEVICE_FAMILY_PATH(x) <ti/devices/DEVICE_FAMILY/x>
     #include DEVICE_FAMILY_PATH(driverlib/aon_batmon.h)
+    #include DEVICE_FAMILY_PATH(driverlib/aux_adc.h) //for ADC calibration operations
 #else
     #error "You must define DEVICE_FAMILY at the project level as one of cc26x0, cc26x0r2, cc13x0, etc."
 #endif
@@ -87,7 +88,7 @@ static Event_Handle nodeEventHandle;
 static uint16_t latestAdcValue;
 static int32_t latestInternalTempValue;
 static Node_BLEActiveType bleActive = Node_BLEActiveTypeNotActive;
-
+double latestTemp;
 
 /* Pin driver handle */
 static PIN_Handle buttonPinHandle;
@@ -238,24 +239,28 @@ static void updateLcd(void)
     Display_clear(hDisplayLcd);
     Display_printf(hDisplayLcd, 0, 0, "NodeID: 0x%02x", nodeAddress);
     Display_printf(hDisplayLcd, 1, 0, "ADC: %04d", latestAdcValue);
-    Display_printf(hDisplayLcd, 2, 0, "Temp I: %d", latestInternalTempValue);
+    Display_printf(hDisplayLcd, 2, 0, "Temp A: %3.3f", latestTemp);
+    Display_printf(hDisplayLcd, 3, 0, "Temp I: %d", latestInternalTempValue);
 
     /* print to UART clear screen, put cursor to beginning of terminal and print the header */
     Display_printf(hDisplaySerial, 0, 0, "\033[2J \033[0;0HNode ID: 0x%02x", nodeAddress);
     Display_printf(hDisplaySerial, 0, 0, "Node ADC Reading: %04d", latestAdcValue);
 
     /* print to LCD */
-    Display_printf(hDisplayLcd, 4, 0, "Mik4el");
+    Display_printf(hDisplayLcd, 5, 0, "Mik4el");
 
     if (bleActive == Node_BLEActiveTypeActive) {
-        Display_printf(hDisplayLcd, 6, 0, "BLE Active");
+        Display_printf(hDisplayLcd, 7, 0, "BLE Active");
     }
 }
 
 void adcCallback(uint16_t adcValue)
 {
-    /* Save latest value */
-    latestAdcValue = adcValue;
+    /* Calibrate and save latest values */
+    uint32_t calADC12_gain = AUXADCGetAdjustmentGain(AUXADC_REF_FIXED);
+    int8_t calADC12_offset = AUXADCGetAdjustmentOffset(AUXADC_REF_FIXED);
+    latestAdcValue = AUXADCAdjustValueForGainAndOffset(adcValue, calADC12_gain, calADC12_offset);
+    latestTemp = -0.193 * latestAdcValue * 1440 / 4095 + 212.009; // constants from LMT70 datasheet
     latestInternalTempValue = AONBatMonTemperatureGetDegC();
 
     /* Post event */

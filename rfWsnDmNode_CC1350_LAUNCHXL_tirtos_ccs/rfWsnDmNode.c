@@ -53,7 +53,7 @@
  *  ======== main ========
  */
 int main(void)
- {
+{
     /* Call driver init functions. */
     Board_initGeneral();
 
