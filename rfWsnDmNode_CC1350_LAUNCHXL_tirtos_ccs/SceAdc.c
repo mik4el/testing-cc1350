@@ -60,7 +60,7 @@ void SceAdc_init(uint32_t samplingTime, uint32_t minReportInterval, uint16_t adc
     scifInit(&scifDriverSetup);
     scifStartRtcTicksNow(samplingTime);
 
-    SCIF_ADC_SAMPLE_CFG_T* pCfg = scifGetTaskStruct(SCIF_ADC_SAMPLE_TASK_ID, SCIF_STRUCT_CFG);
+    SCIF_SIMPLE_LMT70_ADC_CFG_T* pCfg = scifGetTaskStruct(SCIF_SIMPLE_LMT70_ADC_TASK_ID, SCIF_STRUCT_CFG);
     pCfg->changeMask = adcChangeMask;
     //Set minimum report interval in units of samplingTime
     pCfg->minReportInterval = minReportInterval;
@@ -68,7 +68,7 @@ void SceAdc_init(uint32_t samplingTime, uint32_t minReportInterval, uint16_t adc
 
 void SceAdc_setReportInterval(uint32_t minReportInterval, uint16_t adcChangeMask) {
     //Set the report interval and min change in the SC config structure
-    SCIF_ADC_SAMPLE_CFG_T* pCfg = scifGetTaskStruct(SCIF_ADC_SAMPLE_TASK_ID, SCIF_STRUCT_CFG);
+    SCIF_SIMPLE_LMT70_ADC_CFG_T* pCfg = scifGetTaskStruct(SCIF_SIMPLE_LMT70_ADC_TASK_ID, SCIF_STRUCT_CFG);
     pCfg->changeMask = adcChangeMask;
     //Set minimum report interval in units of samplingTime
     pCfg->minReportInterval = minReportInterval;
@@ -76,7 +76,7 @@ void SceAdc_setReportInterval(uint32_t minReportInterval, uint16_t adcChangeMask
 
 void SceAdc_start(void) {
     // Start task
-    scifStartTasksNbl((1 <<SCIF_ADC_SAMPLE_TASK_ID));
+    scifStartTasksNbl((1 <<SCIF_SIMPLE_LMT70_ADC_TASK_ID));
 }
 
 void SceAdc_registerAdcCallback(SceAdc_adcCallback callback) {
@@ -93,11 +93,11 @@ static void taskAlertCallback(void) {
     scifClearAlertIntSource();
 
     /* Only handle the periodic event alert */
-    if (scifGetAlertEvents() & (1 << SCIF_ADC_SAMPLE_TASK_ID))
+    if (scifGetAlertEvents() & (1 << SCIF_SIMPLE_LMT70_ADC_TASK_ID))
     {
 
         /* Get the SCE "output" structure */
-        SCIF_ADC_SAMPLE_OUTPUT_T* pOutput = scifGetTaskStruct(SCIF_ADC_SAMPLE_TASK_ID, SCIF_STRUCT_OUTPUT);
+        SCIF_SIMPLE_LMT70_ADC_OUTPUT_T* pOutput = scifGetTaskStruct(SCIF_SIMPLE_LMT70_ADC_TASK_ID, SCIF_STRUCT_OUTPUT);
 
         /* Send new ADC value to application via callback */
         if (adcCallback)

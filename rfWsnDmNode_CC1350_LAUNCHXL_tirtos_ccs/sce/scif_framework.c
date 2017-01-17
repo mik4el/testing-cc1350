@@ -1,25 +1,25 @@
 /// \addtogroup module_scif_generic_interface
 //@{
 #include "scif_framework.h"
+#undef DEVICE_FAMILY_PATH
 #ifdef DEVICE_FAMILY
-    #undef DEVICE_FAMILY_PATH
     #define DEVICE_FAMILY_PATH(x) <ti/devices/DEVICE_FAMILY/x>
-    #include DEVICE_FAMILY_PATH(inc/hw_types.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_memmap.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_aon_event.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_aon_rtc.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_aon_wuc.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_aux_sce.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_aux_smph.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_aux_evctl.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_aux_aiodio.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_aux_wuc.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_event.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_ints.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_ioc.h)
 #else
-    #error "You must define DEVICE_FAMILY at the project level as one of cc26x0, cc26x0r2, cc13x0, etc."
+    #define DEVICE_FAMILY_PATH(x) <x>
 #endif
+#include DEVICE_FAMILY_PATH(inc/hw_types.h)
+#include DEVICE_FAMILY_PATH(inc/hw_memmap.h)
+#include DEVICE_FAMILY_PATH(inc/hw_aon_event.h)
+#include DEVICE_FAMILY_PATH(inc/hw_aon_rtc.h)
+#include DEVICE_FAMILY_PATH(inc/hw_aon_wuc.h)
+#include DEVICE_FAMILY_PATH(inc/hw_aux_sce.h)
+#include DEVICE_FAMILY_PATH(inc/hw_aux_smph.h)
+#include DEVICE_FAMILY_PATH(inc/hw_aux_evctl.h)
+#include DEVICE_FAMILY_PATH(inc/hw_aux_aiodio.h)
+#include DEVICE_FAMILY_PATH(inc/hw_aux_wuc.h)
+#include DEVICE_FAMILY_PATH(inc/hw_event.h)
+#include DEVICE_FAMILY_PATH(inc/hw_ints.h)
+#include DEVICE_FAMILY_PATH(inc/hw_ioc.h)
 #include <string.h>
 #if defined(__IAR_SYSTEMS_ICC__)
     #include <intrinsics.h>
@@ -35,7 +35,7 @@ static SCIF_DATA_T scifData;
 #include "scif_osal_tirtos.c"
 
 
-// Workaround for register field renaming (will be removed in release 1.1.0)
+// Workaround for register field renaming
 #ifndef AUX_WUC_MODCLKEN0_ANAIF_M
     #define AUX_WUC_MODCLKEN0_ANAIF_M AUX_WUC_MODCLKEN0_SOC_M
 #endif
@@ -181,7 +181,7 @@ void scifUninitIo(uint32_t auxIoIndex, int pullLevel) {
   *     The bit-vector
   *
   * \return
-  *     The bit index of the least significant '1', e.g. 2 for 0x0004, or 32 if all bits are '0'
+  *     The bit index of the least significant '1', for example 2 for 0x0004, or 32 if all bits are '0'
   */
 static int scifFindLeastSignificant1(uint32_t x) {
 #if defined(__IAR_SYSTEMS_ICC__) || defined(DOXYGEN)
@@ -278,15 +278,13 @@ SCIF_RESULT_T scifInit(const SCIF_DATA_T* pScifDriverSetup) {
     scifOsalLeaveCriticalSection(key);
     HWREG(AON_RTC_BASE + AON_RTC_O_SYNC);
 
-    // Register and enable the interrupts. If warm, we probably have task ALERT event(s) pending, which
-    // will be triggered immediately. We need to clear the interrupts because they might have been used
-    // previously
+    // Register, clear and enable the interrupts
     osalRegisterCtrlReadyInt();
     osalClearCtrlReadyInt();
     osalEnableCtrlReadyInt();
     osalRegisterTaskAlertInt();
     osalClearTaskAlertInt();
-    osalEnableTaskAlertInt();
+    scifOsalEnableTaskAlertInt();
 
     return SCIF_SUCCESS;
 
@@ -321,7 +319,9 @@ void scifUninit(void) {
 
     // Disable interrupts
     osalDisableCtrlReadyInt();
-    osalDisableTaskAlertInt();
+    osalUnregisterCtrlReadyInt();
+    scifOsalDisableTaskAlertInt();
+    osalUnregisterTaskAlertInt();
 
     // Perform task resource uninitialization
     scifData.fptrTaskResourceUninit();
@@ -389,7 +389,7 @@ void scifAckAlertEvents(void) {
     // Make sure that the CPU interrupt has been cleared before reenabling it
     osalClearTaskAlertInt();
     uint32_t key = scifOsalEnterCriticalSection();
-    osalEnableTaskAlertInt();
+    scifOsalEnableTaskAlertInt();
 
     // Set the ACK event to the Sensor Controller
     HWREGB(AUX_EVCTL_BASE + AUX_EVCTL_O_VECCFG1 + 1) = (AUX_EVCTL_VECCFG1_VEC3_EV_AON_SW | AUX_EVCTL_VECCFG1_VEC3_EN_M | AUX_EVCTL_VECCFG1_VEC3_POL_M) >> 8;
@@ -397,6 +397,42 @@ void scifAckAlertEvents(void) {
     scifOsalLeaveCriticalSection(key);
 
 } // scifAckAlertEvents
+
+
+
+
+/** \brief Selects whether or not the ALERT interrupt shall wake up the System CPU
+  *
+  * If the System CPU is in standby mode when the Sensor Controller generates an ALERT interrupt, the
+  * System CPU will wake up by default.
+  *
+  * Call this function to disable or re-enable System CPU wake-up on ALERT interrupt. This can be used to
+  * defer ALERT interrupt processing until the System CPU wakes up for other reasons, for example to
+  * handle radio events, and thereby avoid unnecessary wake-ups.
+  *
+  * Note that there can be increased current consumption in System CPU standby mode if the ALERT
+  * interrupt is disabled (by calling \ref scifOsalDisableTaskAlertInt()), but wake-up is enabled. This
+  * is because the wake-up signal will remain asserted until \ref scifAckAlertEvents() has been called
+  * for all pending ALERT events.
+  *
+  * The behavior resets to enabled when \ref scifInit() is called.
+  *
+  * \param[in]      enable
+  *     Set to false to disable System CPU wake-up on ALERT interrupt, or true to reenable wake-up.
+  */
+void scifSetWakeOnAlertInt(bool enable) {
+    uint32_t key = scifOsalEnterCriticalSection();
+    uint32_t mcuwusel = HWREG(AON_EVENT_BASE + AON_EVENT_O_MCUWUSEL) & ~(AON_EVENT_MCUWUSEL_WU0_EV_M << OSAL_MCUWUSEL_WU_EV_S);
+    if (enable) {
+        scifData.pIntData->alertCanPdAuxMask = 0x0000;
+        mcuwusel |= (AON_EVENT_MCUWUSEL_WU0_EV_AUX_SWEV1 << OSAL_MCUWUSEL_WU_EV_S);
+    } else {
+        scifData.pIntData->alertCanPdAuxMask = 0xFFFF;
+        mcuwusel |= (AON_EVENT_MCUWUSEL_WU0_EV_NONE << OSAL_MCUWUSEL_WU_EV_S);
+    }
+    HWREG(AON_EVENT_BASE + AON_EVENT_O_MCUWUSEL) = mcuwusel;
+    scifOsalLeaveCriticalSection(key);
+} // scifSetWakeOnAlertInt
 
 
 
@@ -712,18 +748,21 @@ static SCIF_RESULT_T scifCtrlTasksNbl(uint32_t bvTaskIds, uint32_t bvTaskReq) {
 
 
 
-/** \brief Executes the specified tasks once
+/** \brief Executes the specified tasks once, from an inactive state
   *
-  * This triggers the initialization, execution and termination code for each task ID specified in
+  * This triggers the Initialization, Execution and Termination code for each task ID specified in
   * \a bvTaskIds. All selected code is completed for one task before proceeding with the next task. The
   * control READY event is generated when the tasks have been executed.
   *
   * This function should not be used to execute a task that implements the event handler code, because
-  * the execution method does not allow for running the event handler code.
+  * the execution method does not allow for running the Event Handler code.
   *
-  * This function must not be called for already active tasks.
+  * \note This function must not be called for already active tasks.
   *
-  * \note Calling this function can delay the next (previously active) task to be executed, if any.
+  * \note Task control does not interrupt ongoing code execution on the Sensor Controller, but it has
+  *       priority over other triggers/wake-up sources. Calling this function can therefore delay
+  *       upcoming Sensor Controller activities such as RTC-based task execution and Event Handler code
+  *       execution.
   *
   * \param[in]      bvTaskIds
   *     Bit-vector indicating which tasks should be executed (where bit N corresponds to task ID N)
@@ -747,7 +786,10 @@ SCIF_RESULT_T scifExecuteTasksOnceNbl(uint16_t bvTaskIds) {
   *
   * \note This function must not be called for already active tasks.
   *
-  * \note Calling this function can delay the next (previously active) task to be executed, if any.
+  * \note Task control does not interrupt ongoing code execution on the Sensor Controller, but it has
+  *       priority over other triggers/wake-up sources. Calling this function can therefore delay
+  *       upcoming Sensor Controller activities such as RTC-based task execution and Event Handler code
+  *       execution.
   *
   * \param[in]      bvTaskIds
   *     Bit-vector indicating which tasks to be started (where bit N corresponds to task ID N)
@@ -769,7 +811,10 @@ SCIF_RESULT_T scifStartTasksNbl(uint16_t bvTaskIds) {
   * This triggers the termination code for each task ID specified in \a bvTaskIds. The READY event is
   * generated when the tasks have been stopped.
   *
-  * \note Calling this function can delay the next (still active) task to be executed, if any.
+  * \note Task control does not interrupt ongoing code execution on the Sensor Controller, but it has
+  *       priority over other triggers/wake-up sources. Calling this function can therefore delay
+  *       upcoming Sensor Controller activities such as RTC-based task execution and Event Handler code
+  *       execution.
   *
   * \param[in]      bvTaskIds
   *     Bit-vector indicating which tasks to be stopped (where bit N corresponds to task ID N)
@@ -785,14 +830,64 @@ SCIF_RESULT_T scifStopTasksNbl(uint16_t bvTaskIds) {
 
 
 
+/** \brief Triggers manually the Execution code blocks for the specified tasks
+  *
+  * This triggers the Execution code for each task ID specified in \a bvTaskIds. The READY event
+  * is generated when the Execution code has run for all the specified tasks.
+  *
+  * Calling this function does not interrupt any ongoing activities on the Sensor Controller, and does
+  * not affect RTC-based task execution.
+  *
+  * \note This function should only be called for already active tasks.
+  *
+  * \note Task control does not interrupt ongoing code execution on the Sensor Controller, but it has
+  *       priority over other triggers/wake-up sources. Calling this function can therefore delay
+  *       upcoming Sensor Controller activities such as RTC-based task execution and Event Handler code
+  *       execution.
+  *
+  * \param[in]      bvTaskIds
+  *     Bit-vector indicating which tasks should be executed (where bit N corresponds to task ID N)
+  *
+  * \return
+  *     \ref SCIF_SUCCESS if successful, otherwise \ref SCIF_NOT_READY (last non-blocking call has not
+  *     completed) or \ref SCIF_ILLEGAL_OPERATION (attempted to execute an already active task). The
+  *     function call has no effect if unsuccessful.
+  */
+SCIF_RESULT_T scifSwTriggerExecutionCodeNbl(uint16_t bvTaskIds) {
+    return scifCtrlTasksNbl(bvTaskIds, 0x02);
+} // scifSwTriggerExecutionCodeNbl
+
+
+
+
+/** \brief Triggers manually the event handler code block
+  *
+  * This function forces execution of the Event Handler code, for whichever task it belongs to.
+  *
+  * Calling this function does not interrupt any ongoing activities on the Sensor Controller. It does
+  * however cancel any previous trigger setup by a \c evhSetupCompbTrigger(), \c evhSetupGpioTrigger()
+  * or \c evhSetupCompbTrigger() procedure call in task code.
+  *
+  * \note This function should only be called when the task using the event handler code is already
+  *       active.
+  */
+void scifSwTriggerEventHandlerCode(void) {
+    HWREGB(AUX_EVCTL_BASE + AUX_EVCTL_O_VECCFG1) = AUX_EVCTL_VECCFG1_VEC2_EV_AON_SW | AUX_EVCTL_VECCFG1_VEC2_EN_M | AUX_EVCTL_VECCFG1_VEC2_POL_M;
+} // scifSwTriggerEventHandlerCode
+
+
+
+
 /** \brief Waits for a non-blocking call to complete, with timeout
   *
   * The non-blocking task control functions, \ref scifExecuteTasksOnceNbl(), \ref scifStartTasksNbl()
   * and \ref scifStopTasksNbl(), may take some time to complete. This wait function can be used to make
-  * blocking calls (i.e. where the OS switches thread when not ready).
+  * blocking calls, and allow an operating system to switch context when until the task control interface
+  * becomes ready again.
   *
   * The function returns when the last non-blocking call has completed, or immediately if already
-  * completed.
+  * completed. The function can also return immediately with the \ref SCIF_ILLEGAL_OPERATION error if
+  * called from multiple threads of execution with non-zero \a timeoutUs.
   *
   * \b Important: Unlike the ALERT event, the READY event does not generate MCU domain and System CPU
   * wake-up. Depending on the SCIF OSAL implementation, this function might not return before the
@@ -806,13 +901,15 @@ SCIF_RESULT_T scifStopTasksNbl(uint16_t bvTaskIds) {
   *     function (which also will return \ref SCIF_NOT_READY if not ready).
   *
   * \return
-  *     \ref SCIF_SUCCESS if the last call has completed, otherwise \ref SCIF_NOT_READY.
+  *     \ref SCIF_SUCCESS if the last call has completed, otherwise \ref SCIF_NOT_READY (the timeout
+  *     expired) or \ref SCIF_ILLEGAL_OPERATION (the OSAL does not allow this function to be called with
+  *     non-zero \a timeoutUs from multiple threads of execution).
   */
 SCIF_RESULT_T scifWaitOnNbl(uint32_t timeoutUs) {
-    if ((HWREG(AUX_EVCTL_BASE + AUX_EVCTL_O_EVTOAONFLAGS) & AUX_EVCTL_EVTOAONFLAGS_SWEV0_M) || osalWaitOnCtrlReady(timeoutUs)) {
+    if (HWREG(AUX_EVCTL_BASE + AUX_EVCTL_O_EVTOAONFLAGS) & AUX_EVCTL_EVTOAONFLAGS_SWEV0_M) {
         return SCIF_SUCCESS;
     } else {
-        return SCIF_NOT_READY;
+        return osalWaitOnCtrlReady(timeoutUs);
     }
 } // scifWaitOnNbl
 
@@ -834,3 +931,6 @@ uint16_t scifGetActiveTaskIds(void) {
 
 
 //@}
+
+
+// Generated by DESKTOP-1CPIAJB at 2017-01-17 12:51:40.344

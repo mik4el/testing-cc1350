@@ -38,19 +38,19 @@
   * This can be done at any point, independently of calls to \ref scifInit().
   *
   *
-  * \subsection section_scif_uninit Uninitialization and Driver Switching
-  * It is possible to have multiple Sensor Controller Interface drivers in one application, however these
-  * are not allowed to run at the same time. To switch from one driver to another, the currently used
-  * driver must be uninitialized first by calling \ref scifUninit().
+  * \subsection section_scif_uninit Uninitialization and Driver Setup Switching
+  * It is possible to have multiple Sensor Controller Interface driver setups in one application, however
+  * these are not allowed to run at the same time. To switch from one driver setup to another, the
+  * currently used driver setup must be deactivated first by calling \ref scifUninit().
   * \code
-  * // Load the driver setup with prefix "ABC"
-  * scifInit(&scifAbcData);
+  * // Load the driver setup with source code prefix "ABC"
+  * scifInit(&scifAbcDriverSetup);
   *
   * ...
   *
-  * // Switch to the driver setup with prefix "XYZ"
+  * // Switch to the driver setup with source code prefix "XYZ"
   * scifUninit();
-  * scifInit(&scifXyzData);
+  * scifInit(&scifXyzDriverSetup);
   *
   * ...
   * \endcode
@@ -60,9 +60,9 @@
   *
   *
   * \subsection section_scif_aux_domain_access AUX Domain Access
-  * If the Sensor Controller is used (i.e. \ref scifInit() is called), the AUX domain will by default not
-  * have any clock while the Sensor Controller is idle. In this state, the System CPU and DMA will not
-  * have access to the following AUX domain and SCIF resources:
+  * When the Sensor Controller is used (\ref scifInit() has been called), the AUX domain will by default
+  * not have any clock while the Sensor Controller is idle. In this state, the System CPU and DMA will
+  * not have access to the following AUX domain and SCIF resources:
   * - Oscillator control registers
   * - AUX ADI registers for ADC, analog comparators, current source etc.
   * - AUX sub-module registers and AUX RAM
@@ -70,10 +70,10 @@
   * - SCIF data structures located in AUX RAM
   *
   * The implementation of AUX domain access control is OS-specific. For some OSAL implementations
-  * (e.g. "TI-RTOS"), this is handled automatically by the OS framework so that the features listed above
-  * are in practice always accessible to the application. For other OSAL implementations (e.g. "None"),
-  * the application must call provided AUX domain access control functions whenever it needs or no longer
-  * needs access to the AUX domain and SCIF features.
+  * (for example "TI-RTOS"), this is handled automatically by the OS framework so that the features
+  * listed above are in practice always accessible to the application. For other OSAL implementations
+  * (for example "None"), the application must call provided AUX domain access control functions whenever
+  * it needs or no longer needs access to the AUX domain and SCIF features.
   *
   *
   * \subsection section_scif_task_struct_access Task Data Structure Access
@@ -82,7 +82,7 @@
   * - Indirectly using \ref scifGetTaskStruct(), with task ID and data structure type as input
   *
   * The first method is more efficient, and be used with the \c cfg and \c state structures, and
-  * single-buffered \c input and \c output data structures.
+  * with single-buffered \c input and \c output data structures.
   *
   * The second method can be used for any data structure, including multiple-buffered \c input and
   * \c output data structures, where it will select the correct buffer (to be accessed by the
@@ -91,18 +91,19 @@
   *
   * \subsection section_scif_task_control Task Control
   * Sensor Controller tasks are started, stopped or can be executed once using these generic functions:
-  * - scifStartTasksNbl() - Starts the specified tasks, by triggering their Initialization code
+  * - \ref scifStartTasksNbl() - Starts the specified tasks, by triggering their Initialization code
   *     - If needed, \ref scifSetTaskStartupDelay() can be used to skew the execution timing for the
   *       tasks started. This may also be used to spread or concentrate in time data exchange processing.
-  * - scifStopTasksNbl() - Stops the specified tasks, by cancelling any scheduled execution and running
-  *   the Termination code.
-  * - scifExecuteTasksOnceNbl() - Triggers the Initialization, Execution and Termination code once for
-  *   each specified task.
+  * - \ref scifStopTasksNbl() - Stops the specified tasks, by cancelling any scheduled execution and
+  *   running the Termination code.
+  * - \ref scifExecuteTasksOnceNbl() - Triggers the Initialization, Execution and Termination code once
+  *   for each specified task.
   *
   * The above functions are non-blocking in the sense that they do not wait for the Sensor Controller to
   * run the task code specified. To wait for the last non-blocking call to finish, or check if it has,
   * the application can call \ref scifWaitOnNbl(), or wait for the task control READY interrupt
-  * (depending on the OSAL implementation).
+  * (depending on the OSAL implementation). New non-blocking calls will fail until the last non-blocking
+  * call has finished.
   *
   * To check which tasks are currently active, use \ref scifGetActiveTaskIds().
   *
@@ -120,6 +121,33 @@
   * structure contents). Resetting the \c state data structure is mandatory.
   *
   *
+  * \subsubsection section_scif_manual_trigger Manually Triggered Task Execution
+  * For currently active Sensor Controller tasks, it is possible to trigger the Execution code and Event
+  * Handler code manually from the System CPU application:
+  * - \ref scifSwTriggerExecutionCodeNbl() - Triggers the Execution code once for each specified task.
+  *   This function is non-blocking in the same way as \ref scifStartTasksNbl(), \ref scifStopTasksNbl()
+  *   and \ref scifExecuteTasksOnceNbl(). New non-blocking calls will fail until the last non-blocking
+  *   call has finished.
+  * - \ref scifSwTriggerEventHandlerCode() - Triggers the Event Handler code (for whichever task it
+  *   belongs to).
+  *
+  *
+  * \subsubsection section_scif_task_control_multithreading Task Control in Multiple Threads of Execution
+  * Follow these guidelines when controlling Sensor Controller tasks from multiple threads of execution:
+  * - Always check the return value from every call to \ref scifStartTasksNbl(), \ref scifStopTasksNbl(),
+  *   \ref scifExecuteTasksOnceNbl(), \ref scifSwTriggerExecutionCodeNbl() and \ref scifWaitOnNbl()
+  * - Do one of the following if \ref scifWaitOnNbl() is called with non-zero timeout from multiple
+  *   threads of execution:
+  *     - Call \ref scifWaitOnNbl() only after a successful call to \ref scifStartTasksNbl(),
+  *       \ref scifStopTasksNbl(), \ref scifExecuteTasksOnceNbl() or \ref scifSwTriggerExecutionCodeNbl(),
+  *       in the same thread of execution
+  *     - Use a semaphore or similar mechanism to ensure that only one thread of execution can perform
+  *       task control operations at any time
+  * - If possible, avoid controlling a single Sensor Controller task from multiple threads of execution.
+  *   Otherwise, use a semaphore or similar mechanism to ensure that one sequence of task control
+  *   operations cannot interrupt another.
+  *
+  *
   * \subsection section_scif_usage_data_exchange Data Exchange
   * Task data exchange is performed on the Sensor Controller's initiative when the task code calls:
   * - \c fwGenAlertInterrupt() or \c fwGenQuickAlertInterrupt() for single-buffered data exchange or
@@ -135,10 +163,10 @@
   * - Call \ref scifGetAlertEvents() to determine which tasks have pending events. If there is only one
   *   task and there is no risk of buffer overflow or underflow, this can be skipped. For each task with
   *   pending events:
-  *     - For single-buffered input/output data exchange:
+  *     - For single-buffered output data exchange:
   *         - Access the task's output data, either directly or indirectly using \ref scifGetTaskStruct()
   *     - For multiple-buffered output data exchange:
-  *         - Call scifGetTaskIoStructAvailCount() to get the number of buffers to be exchanged, and
+  *         - Call \ref scifGetTaskIoStructAvailCount() to get the number of buffers to be exchanged, and
   *           repeat the following steps the indicated number of times:
   *             - Call \ref scifGetTaskStruct() to get a pointer to the correct buffer
   *             - Access the data structure
@@ -146,6 +174,23 @@
   * - Call \ref scifAckAlertEvents() to acknowledge the handled events. If additional events have
   *   occurred in the meantime, the ALERT interrupt will be triggered again.
   *
+  * \subsubsection section_scif_usage_interrupt_control Interrupt Control
+  * Depending on the application it can desirable to defer System CPU wake-up on ALERT interrupt, for
+  * example when using multiple-buffered output data exchange. It is also possible to disable ALERT
+  * interrupt handling temporarily. This can be done using the following functions:
+  * - Call \ref scifSetWakeOnAlertInt() to disable System CPU wake-up on ALERT interrupt, so that ALERT
+  *   handling can be done when the System CPU wakes up for other reasons, for example to use the radio.
+  * - Call \ref scifOsalDisableTaskAlertInt() to temporarily disable the ALERT interrupt handling on the
+  *   System CPU. Note the following:
+  *     - There can be increased current consumption in System CPU standby mode if the ALERT interrupt
+  *       is disabled, but wake-up is enabled. This is because the wake-up signal will remain asserted
+  *       until \ref scifAckAlertEvents() has been called for all pending ALERT events.
+  *     - The SCIF framework itself disables the ALERT interrupt immediatly before generating the ALERT
+  *       callback, and reenables it again in \ref scifAckAlertEvents().
+  * - Call \ref scifOsalEnableTaskAlertInt() to reenable the ALERT interrupt handling on the System CPU.
+  *
+  * The ALERT interrupt and wake-up on ALERT interrupt are both enabled by default after calling
+  * \ref scifInit().
   * @{
   */
 #ifndef SCIF_FRAMEWORK_H
@@ -181,7 +226,8 @@ typedef void (*SCIF_VFPTR)(void);
 typedef struct {
     uint16_t taskId;              ///< ID of currently executed Sensor Controller task
     uint16_t bvTaskIoAlert;       ///< Pending input/output data alert (LSB = normal exchange, MSB = overflow or underflow)
-    uint16_t alertGenMask;        ///< ALERT interrupt generation mask
+    uint16_t alertGenMask;        ///< Can generate an ALERT interrupt now? (0xFFFF = yes, 0x0000 = no)
+    uint16_t alertCanPdAuxMask;   ///< Can power down AUX domain after ALERT interrupt generation? (0xFFFF = yes, 0x0000 = no)
 } SCIF_INT_DATA_T;
 #pragma pack(pop)
 
@@ -260,6 +306,7 @@ void scifUninit(void);
 uint32_t scifGetAlertEvents(void);
 void scifClearAlertIntSource(void);
 void scifAckAlertEvents(void);
+void scifSetWakeOnAlertInt(bool wakeOnAlertInt);
 
 // Task generic configuration functions
 void scifSetTaskStartupDelay(uint32_t taskId, uint16_t ticks);
@@ -276,9 +323,16 @@ SCIF_RESULT_T scifStartTasksNbl(uint16_t bvTaskIds);
 SCIF_RESULT_T scifStopTasksNbl(uint16_t bvTaskIds);
 SCIF_RESULT_T scifWaitOnNbl(uint32_t timeoutUs);
 
+// Task code manual trigger functions
+SCIF_RESULT_T scifSwTriggerExecutionCodeNbl(uint16_t bvTaskIds);
+void scifSwTriggerEventHandlerCode(void);
+
 // Task status functions
 uint16_t scifGetActiveTaskIds(void);
 
 
 #endif
 //@}
+
+
+// Generated by DESKTOP-1CPIAJB at 2017-01-17 12:51:40.344

@@ -3,19 +3,19 @@
 #ifdef SCIF_INCLUDE_OSAL_C_FILE
 
 
+#undef DEVICE_FAMILY_PATH
+#ifdef DEVICE_FAMILY
+    #define DEVICE_FAMILY_PATH(x) <ti/devices/DEVICE_FAMILY/x>
+#else
+    #define DEVICE_FAMILY_PATH(x) <x>
+#endif
+#include DEVICE_FAMILY_PATH(inc/hw_nvic.h)
+#include DEVICE_FAMILY_PATH(driverlib/cpu.h)
 #include "scif_osal_tirtos.h"
 #include <ti/sysbios/knl/Semaphore.h>
 #include <ti/sysbios/knl/Clock.h>
 #include <ti/sysbios/family/arm/m3/Hwi.h>
 
-#ifdef DEVICE_FAMILY
-    #undef DEVICE_FAMILY_PATH
-    #define DEVICE_FAMILY_PATH(x) <ti/devices/DEVICE_FAMILY/x>
-    #include DEVICE_FAMILY_PATH(driverlib/cpu.h)
-    #include DEVICE_FAMILY_PATH(inc/hw_nvic.h)
-#else
-    #error "You must define DEVICE_FAMILY at the project level as one of cc26x0, cc26x0r2, cc13x0, etc."
-#endif
 
 
 /// MCU wakeup source to be used with the Sensor Controller task ALERT event, must not conflict with OS
@@ -39,14 +39,17 @@ static void osalCtrlReadyIsr(UArg arg);
 static void osalTaskAlertIsr(UArg arg);
 
 
-/// HWI for Ctrl Ready
+/// HWI object for the control READY interrupt
 static Hwi_Struct hwiCtrlReady;
-/// HWI for Task Alert
+/// HWI object for the task ALERT interrupt
 static Hwi_Struct hwiTaskAlert;
 
 
-/// Semaphore for Ctrl Ready
+/// Semaphore for control READY waiting
 static Semaphore_Struct semCtrlReady;
+
+/// Has the \ref scifOsalInit() function been called?
+static volatile bool osalInitDone = false;
 
 
 
@@ -65,9 +68,22 @@ static void osalRegisterCtrlReadyInt(void) {
     Hwi_Params_init(&hwiParams);
     // Do not enable interrupt yet
     hwiParams.enableInt = false;
-    // Create HWI object for the control READY interrupt
+    // Create the HWI object for the control READY interrupt
     Hwi_construct(&hwiCtrlReady, INT_SCIF_CTRL_READY, osalCtrlReadyIsr, &hwiParams, NULL);
 } // osalRegisterCtrlReadyInt
+
+
+
+
+/** \brief Unregisters the control READY interrupt
+  *
+  * This detaches the \ref osalCtrlReadyIsr() function from the \ref INT_SCIF_CTRL_READY interrupt
+  * vector.
+  */
+static void osalUnregisterCtrlReadyInt(void) {
+    // Destroy the HWI object
+    Hwi_destruct(&hwiCtrlReady);
+} // osalUnregisterCtrlReadyInt
 
 
 
@@ -129,14 +145,27 @@ static void osalRegisterTaskAlertInt(void) {
 
 
 
+/** \brief Unregisters the task ALERT interrupt
+  *
+  * This detaches the \ref osalTaskAlertIsr() function from the \ref INT_SCIF_TASK_ALERT interrupt
+  * vector.
+  */
+static void osalUnregisterTaskAlertInt(void) {
+    // Destroy the HWI object
+    Hwi_destruct(&hwiTaskAlert);
+} // osalUnregisterTaskAlertInt
+
+
+
+
 /** \brief Enables the task ALERT interrupt
   *
   * The interrupt is enabled at startup. It is disabled upon reception of a task ALERT interrupt and re-
   * enabled when the task ALERT is acknowledged.
   */
-static void osalEnableTaskAlertInt(void) {
+void scifOsalEnableTaskAlertInt(void) {
     Hwi_enableInterrupt(INT_SCIF_TASK_ALERT);
-} // osalEnableTaskAlertInt
+} // scifOsalEnableTaskAlertInt
 
 
 
@@ -145,10 +174,15 @@ static void osalEnableTaskAlertInt(void) {
   *
   * The interrupt is enabled at startup. It is disabled upon reception of a task ALERT interrupt and re-
   * enabled when the task ALERT is acknowledged.
+  *
+  * Note that there can be increased current consumption in System CPU standby mode if the ALERT
+  * interrupt is disabled, but wake-up is enabled (see \ref scifSetWakeOnAlertInt()). This is because the
+  * wake-up signal will remain asserted until \ref scifAckAlertEvents() has been called for all pending
+  * ALERT events.
   */
-static void osalDisableTaskAlertInt(void) {
+void scifOsalDisableTaskAlertInt(void) {
     Hwi_disableInterrupt(INT_SCIF_TASK_ALERT);
-} // osalDisableTaskAlertInt
+} // scifOsalDisableTaskAlertInt
 
 
 
@@ -231,6 +265,12 @@ static void osalUnlockCtrlTaskNbl(void) {
 
 
 
+/// Stores whether \ref semCtrlReady is being pended on in osalWaitOnCtrlReady()
+static volatile bool osalWaitOnNblLocked = false;
+
+
+
+
 /** \brief Waits until the task control interface is ready/idle
   *
   * This indicates that the task control interface is ready for the first request or that the last
@@ -240,29 +280,51 @@ static void osalUnlockCtrlTaskNbl(void) {
   *     Minimum timeout, in microseconds
   *
   * \return
-  *     Whether the task control interface is now idle/ready
+  *     \ref SCIF_SUCCESS if the last call has completed, otherwise \ref SCIF_NOT_READY (the timeout
+  *     expired) or \ref SCIF_ILLEGAL_OPERATION (the OSAL does not allow this function to be called with
+  *     non-zero \a timeoutUs from multiple threads of execution).
   */
-static bool osalWaitOnCtrlReady(uint32_t timeoutUs) {
+static SCIF_RESULT_T osalWaitOnCtrlReady(uint32_t timeoutUs) {
 
-    // Wait if the last control request is not yet completed
+    // If ready now ...
     uint32_t key = Hwi_disable();
-    if (!(HWREG(AUX_EVCTL_BASE + AUX_EVCTL_O_EVTOAONFLAGS) & AUX_EVCTL_EVTOAONFLAGS_SWEV0_M)) {
+    if (HWREG(AUX_EVCTL_BASE + AUX_EVCTL_O_EVTOAONFLAGS) & AUX_EVCTL_EVTOAONFLAGS_SWEV0_M) {
 
-        // The control READY interrupt is pending, so it is safe to reset the semaphore and pend on it
-        // because we know the interrupt will happen.
+        // Immediate success
+        Hwi_restore(key);
+        return SCIF_SUCCESS;
+
+    // If no timeout has been specified ...
+    } else if (timeoutUs == 0) {
+
+        // Immediate failure
+        Hwi_restore(key);
+        return SCIF_NOT_READY;
+
+    // If another osalWaitOnCtrlReady() call is in progress ...
+    } else if (osalWaitOnNblLocked) {
+
+        // This call to osalWaitOnCtrlReady() has interrupted another call to osalWaitOnCtrlReady()
+        Hwi_restore(key);
+        return SCIF_ILLEGAL_OPERATION;
+
+    // Otherwise ...
+    } else {
+
+        // The control READY interrupt has not yet occurred, so it is safe to reset the semaphore and
+        // pend on it because we know the interrupt will happen.
         Semaphore_reset(Semaphore_handle(&semCtrlReady), 0);
+        osalWaitOnNblLocked = true;
         Hwi_restore(key);
 
         // Return whether the semaphore was released within the timeout
         if (Semaphore_pend(Semaphore_handle(&semCtrlReady), timeoutUs / Clock_tickPeriod)) {
-            return true;
+            osalWaitOnNblLocked = false;
+            return SCIF_SUCCESS;
         } else {
-            return false;
+            osalWaitOnNblLocked = false;
+            return SCIF_NOT_READY;
         }
-
-    } else {
-        Hwi_restore(key);
-        return true;
     }
 
 } // osalWaitOnCtrlReady
@@ -283,12 +345,17 @@ static SCIF_VFPTR osalIndicateTaskAlertCallback = NULL;
   * This shall trigger a callback, generate a message/event etc.
   */
 static void osalIndicateCtrlReady(void) {
-    // Release sempahore
-    Semaphore_post(Semaphore_handle(&semCtrlReady));
+
+    // If the OSAL has been initialized, release the sempahore
+    if (osalInitDone) {
+        Semaphore_post(Semaphore_handle(&semCtrlReady));
+    }
+
     // Call callback function
     if (osalIndicateCtrlReadyCallback) {
         osalIndicateCtrlReadyCallback();
     }
+
 } // osalIndicateCtrlReady
 
 
@@ -335,7 +402,7 @@ static void osalCtrlReadyIsr(UArg arg) {
   *     Unused
   */
 static void osalTaskAlertIsr(UArg arg) {
-    osalDisableTaskAlertInt();
+    scifOsalDisableTaskAlertInt();
     osalIndicateTaskAlert();
 } // osalTaskAlertIsr
 
@@ -380,13 +447,23 @@ void scifOsalRegisterTaskAlertCallback(SCIF_VFPTR callback) {
   * - \ref scifWaitOnNbl()
   */
 void scifOsalInit(void) {
-    // Create a binary semaphore, initially blocked.
-    Semaphore_Params semParams;
-    Semaphore_Params_init(&semParams);
-    semParams.mode = Semaphore_Mode_BINARY;
-    Semaphore_construct(&semCtrlReady, 0, &semParams);
+
+    // If the OSAL has not yet been initialized ...
+    if (!osalInitDone) {
+        osalInitDone = true;
+
+        // Create a binary semaphore, initially blocked.
+        Semaphore_Params semParams;
+        Semaphore_Params_init(&semParams);
+        semParams.mode = Semaphore_Mode_BINARY;
+        Semaphore_construct(&semCtrlReady, 0, &semParams);
+    }
+
 } // scifOsalInit
 
 
 #endif
 //@}
+
+
+// Generated by DESKTOP-1CPIAJB at 2017-01-17 12:51:40.344

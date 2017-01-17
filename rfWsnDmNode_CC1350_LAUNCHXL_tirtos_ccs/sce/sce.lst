@@ -1,0 +1,471 @@
+               .deffile adi_defs.asm
+               .deffile ddi_defs.asm
+               .deffile reg_defs.asm
+               .deffile sce_defs.asm
+               
+               ; Number of supported tasks
+               .define TASK_COUNT      1
+               
+               ; Resource-specified definitions, if any
+               ; (None)
+               
+               
+               .segment begin "Framework"
+               
+               
+               VectorTable:
+0000 ---- 1408                         jsr         PowerUp
+0001 ---- 040c                         jmp         TaskCtrlReqVector
+0002 ---- 1408                         jsr         PowerUp
+0003 ---- 042c                         jmp         AonRtcCh2Vector
+0004 ---- 1408                         jsr         PowerUp
+0005 ---- 0447                         jmp         Event0Vector
+0006 ---- 1408                         jsr         PowerUp
+0007 ---- 044d                         jmp         TaskAlertAckVector
+               
+               
+               
+               
+               PowerUp:
+                                       ; Deassert the power-down request
+0008 ---- 4436                         iobclr      #0, [#IOP_WUC_PWRDWNREQ]
+               
+                                       ; Wait for it to take effect
+0009 ---- 2437 /waitForPdAck:          iobtst      #0, [#IOP_WUC_PWRDWNACK]
+000a ---- aefe                         biob1       /waitForPdAck
+               
+               FwEmptyFunc:            ; Done
+000b ---- adb7                         rts
+               
+               
+               
+               
+               TaskCtrlReqVector:
+                                       ; Clear the vector flag
+000c ---- 6442                         iobset      #0, [#IOP_EVCTL_VECFLAGSCLR]
+               
+                                       ; For each task ...
+000d ---- 7000                         ld          R7, #0
+               /loop:
+                                           ; Save the task ID
+000e ---- 7c6b                             st          R7, [#fwCtrlInt/taskId]
+               
+                                           ; Handle initialize request, if any
+000f ---- 6871                             ld          R6, [#fwCtrlExt/bvTaskInitializeReq]
+0010 ---- 0068                             ld          R0, #pFwTaskInitializeFuncTable
+0011 ---- 1425                             jsr         /handleReq
+               
+                                           ; Handle execute request, if any
+0012 ---- 6872                             ld          R6, [#fwCtrlExt/bvTaskExecuteReq]
+0013 ---- 0069                             ld          R0, #pFwTaskExecuteFuncTable
+0014 ---- 1425                             jsr         /handleReq
+               
+                                           ; Handle terminate request, if any
+0015 ---- 6873                             ld          R6, [#fwCtrlExt/bvTaskTerminateReq]
+0016 ---- 006a                             ld          R0, #pFwTaskTerminateFuncTable
+0017 ---- 1425                             jsr         /handleReq
+               
+                                           ; Move on to the next task
+0018 ---- 786b                             ld          R7, [#fwCtrlInt/taskId]
+0019 ---- f801                             add         R7, #1
+               
+001a ---- fa01                         cmp         R7, #TASK_COUNT
+001b ---- bef2                         bneq        /loop
+               
+                                       ; Update which tasks are ...
+001c ---- 786f                         ld          R7, [#fwCtrlExt/bvActiveTasks]
+                                       ; ... currently active ...
+001d ---- 6871                         ld          R6, [#fwCtrlExt/bvTaskInitializeReq]
+001e ---- fd0e                         or          R7, R6
+                                       ; ... and inactive ...
+001f ---- 6873                         ld          R6, [#fwCtrlExt/bvTaskTerminateReq]
+0020 ---- ed92                         inv         R6
+0021 ---- fd06                         and         R7, R6
+0022 ---- 7c6f                         st          R7, [#fwCtrlExt/bvActiveTasks]
+               
+                                       ; We're READY for another request
+0023 ---- 642d                         iobset      #IOB_EVCTL_SWEV_READY, [#IOP_EVCTL_SWEVSET]
+               
+                                       ; Generate an ALERT interrupt if needed before powering back down
+0024 ---- 0450                         jmp         GenAlertInterrupt;
+               
+               /handleReq:
+                                       ; Restore the task ID, and load the function pointer (here to avoid pipeline hazard)
+0025 ---- 786b                         ld          R7, [#fwCtrlInt/taskId]
+0026 ---- 8f1f                         ld          R0, [R7+R0]
+               
+                                       ; Skip this request?
+0027 ---- ed8f                         lsr         R6, R7
+0028 ---- ec01                         tst         R6, #0x0001
+0029 ---- be01                         bnz         /noSkip
+002a ---- adb7                             rts
+               /noSkip:
+                                       ; Make the call by jump, with return (rts) in the "called" function
+002b ---- 8db7                         jmp         R0
+               
+               
+               
+               
+               AonRtcCh2Vector:
+                                       ; Start clearing the RTC event
+002c ---- 6630                         iobset      #IOB_WUC_WUEV_RTC, [#IOP_WUC_WUEVCLR]
+               
+                                       ; Clear the vector flag
+002d ---- 6542                         iobset      #1, [#IOP_EVCTL_VECFLAGSCLR]
+               
+                                       ; For each task (R0 is the current task ID) ...
+002e ---- 0000                         ld          R0, #0
+               /loop:
+                                           ; ... that is active ...
+002f ---- 186f                             ld          R1, [#fwCtrlExt/bvActiveTasks]
+0030 ---- 9d88                             lsr         R1, R0
+0031 ---- 9c01                             tst         R1, #0x0001
+0032 ---- b60d                             bz          /skip
+               
+                                               ; Fetch number of RTC intervals until next execution
+0033 ---- 1067                                 ld          R1, #pFwTaskExecuteScheduleTable
+0034 ---- af19                                 ld          R2, [R1+R0]
+               
+                                               ; If not already 0, decrement and store. If then 0 ...
+0035 ---- aa00                                 cmp         R2, #0
+0036 ---- b609                                 beq         /skip
+0037 ---- a8ff                                 add         R2, #-1
+0038 ---- af39                                 st          R2, [R1+R0]
+0039 ---- be06                                 bnz         /skip
+               
+                                                   ; ... execute the task
+003a ---- 0c6b                                     st          R0, [#fwCtrlInt/taskId]
+003b ---- 8869                                     add         R0, #pFwTaskExecuteFuncTable
+003c ---- 8f08                                     ld          R0, [R0]
+                                                   ; Insert NOP to avoid pipeline hazard
+003d ---- fd47                                     nop
+003e ---- 9db7                                     jsr         R0
+003f ---- 086b                                     ld          R0, [#fwCtrlInt/taskId]
+               /skip:
+                                           ; Move on to the next task
+0040 ---- 8801                             add         R0, #1
+               
+0041 ---- 8a01                         cmp         R0, #TASK_COUNT
+0042 ---- beec                         bneq        /loop
+               
+                                       ; Wait for the ACK event to be cleared
+0043 ---- 262f /waitOnRtcClearing:     iobtst      #IOB_WUC_WUEV_RTC, [#IOP_WUC_WUEVFLAGS]
+0044 ---- aefe                         biob1       /waitOnRtcClearing
+0045 ---- 4630                         iobclr      #IOB_WUC_WUEV_RTC, [#IOP_WUC_WUEVCLR]
+               
+                                       ; Generate an ALERT interrupt if needed
+0046 ---- 0450                         jmp         GenAlertInterrupt;
+               
+               
+               
+               
+               Event0Vector:
+                                       ; Disable and clear the vector flag
+0047 ---- 5527                         iobclr      #IOB_EVCTL_VECCFG1_VEC2_EN, [#IOP_EVCTL_VECCFG1]
+0048 ---- 6642                         iobset      #2, [#IOP_EVCTL_VECFLAGSCLR]
+               
+                                       ; Set the task ID
+0049 ---- 0000                         ld          R0, #0
+004a ---- 0c6b                         st          R0, [#fwCtrlInt/taskId]
+               
+                                       ; Jump to the event task code
+004b ---- 140b                         jsr         FwEmptyFunc
+               
+                                       ; Generate an ALERT interrupt if needed
+004c ---- 0450                         jmp         GenAlertInterrupt;
+               
+               
+               
+               
+               TaskAlertAckVector:
+                                       ; Clear the vector flag
+004d ---- 6742                         iobset      #3, [#IOP_EVCTL_VECFLAGSCLR]
+               
+                                       ; Re-enable generation of ALERT interrupts
+004e ---- 03ff                         ld          R0, #-1
+004f ---- 0c6d                         st          R0, [#fwCtrlInt/alertGenMask]
+               
+                                       ; Fall through to GenAlertInterrupt to generate another ALERT interrupt if needed
+               
+               
+               
+               
+               GenAlertInterrupt:
+                                       ; Do we have any ALERT-generating flags pending?
+0050 ---- 786c                         ld          R7, [#fwCtrlInt/bvTaskIoAlert]
+               
+                                       ; Skip if the last I/O ALERT interrupt has not been acknowledged
+0051 ---- 686d                         ld          R6, [#fwCtrlInt/alertGenMask]
+0052 ---- ed37                         tst         R6, R7
+0053 ---- b605                         bz          /skip
+               
+                                           ; Transfer I/O flags from internal to external
+0054 ---- 0000                             ld          R0, #0
+0055 ---- 0c6c                             st          R0, [#fwCtrlInt/bvTaskIoAlert]
+0056 ---- 7c70                             st          R7, [#fwCtrlExt/bvTaskIoAlert]
+               
+                                           ; Generate the ALERT interrupt, and clear the generation mask
+0057 ---- 652d                             iobset      #IOB_EVCTL_SWEV_ALERT, [#IOP_EVCTL_SWEVSET]
+0058 ---- 0c6d                             st          R0, [#fwCtrlInt/alertGenMask]
+               /skip:
+                                       ; Fall through to PowerDown ...
+               
+               
+               
+               
+               PowerDown:
+                                       ; If there are no unacknowledged ALERTs and no vectors pending ...
+0059 ---- 786d                         ld          R7, [#fwCtrlInt/alertGenMask]
+005a ---- 686e                         ld          R6, [#fwCtrlInt/alertCanPdAuxMask]
+005b ---- fd0e                         or          R7, R6
+005c ---- f801                         add         R7, #1 ; 0xFFFF -> 0x0000
+005d ---- e92b                         in          R6, [#IOP_EVCTL_VECFLAGS]
+005e ---- fd0e                         or          R7, R6
+005f ---- be01                         bnz         /noPowerDown
+               
+                                           ; Assert the power-down request. We'll make sure that it has taken effect
+                                           ; or been completely ignored when waking up again
+0060 ---- 6436                             iobset      #0, [#IOP_WUC_PWRDWNREQ]
+               /noPowerDown:
+                                       ; Sleep until the next event
+0061 ---- bdb7 sleepInstr:             sleep
+               
+               
+               
+               
+0062 ---- 241a AdiDdiAcquire:          iobtst      #0, [#IOP_SMPH_SMPH0]
+0063 ---- a6fe                         biob0       AdiDdiAcquire
+0064 ---- adb7                         rts
+               
+0065 ---- 641a AdiDdiRelease:          iobset      #0, [#IOP_SMPH_SMPH0]
+0066 ---- adb7                         rts
+               
+               
+               
+               
+               pFwTaskExecuteScheduleTable:
+0067 ---- 0000                         dw          #0
+               pFwTaskInitializeFuncTable:
+0068 ---- 0079                         dw          #simpleLmt70Adc/initialize
+               pFwTaskExecuteFuncTable:
+0069 ---- 007c                         dw          #simpleLmt70Adc/execute
+               pFwTaskTerminateFuncTable:
+006a ---- 009f                         dw          #simpleLmt70Adc/terminate
+               
+               
+               ; Internal control data
+               fwCtrlInt:
+006b ---- 0000 /taskId:                dw          #0      ; ID of the currently running task
+006c ---- 0000 /bvTaskIoAlert:         dw          #0x0000 ; LSB = Normal data exchange, MSB = Overflow or underflow
+006d ---- ffff /alertGenMask:          dw          #0xFFFF ; Can generate an ALERT interrupt now? (0xFFFF = yes, 0x0000 = no)
+006e ---- 0000 /alertCanPdAuxMask:     dw          #0x0000 ; Can power down AUX domain after ALERT interrupt generation? (0xFFFF = yes, 0x0000 = no)
+               
+               ; External control data, shared with the driver
+               fwCtrlExt:
+006f ---- 0000 /bvActiveTasks:         dw          #0x0000 ; Indicates which tasks are currently active
+0070 ---- 0000 /bvTaskIoAlert:         dw          #0x0000 ; LSB = Normal data exchange, MSB = Overflow or underflow
+0071 ---- 0000 /bvTaskInitializeReq:   dw          #0x0000 ; Requests tasks to start
+0072 ---- 0000 /bvTaskExecuteReq:      dw          #0x0000 ; Requests tasks to execute once immediately
+0073 ---- 0000 /bvTaskTerminateReq:    dw          #0x0000 ; Requests tasks to stop
+               
+               
+               .segment end "Framework"
+               
+               
+               fwTaskDataStructures:
+               .segment begin "Task: Simple LMT70 ADC"
+               simpleLmt70Adc/cfg:
+               simpleLmt70Adc/cfg/changeMask:
+0074 ---- 0000                         dw          #0
+               simpleLmt70Adc/cfg/minReportInterval:
+0075 ---- 0000                         dw          #0
+               simpleLmt70Adc/input:
+               simpleLmt70Adc/output:
+               simpleLmt70Adc/output/adcValue:
+0076 ---- 0000                         dw          #0
+               simpleLmt70Adc/state:
+               simpleLmt70Adc/state/oldAdcMaskedBits:
+0077 ---- 0000                         dw          #0
+               simpleLmt70Adc/state/samplesSinceLastReport:
+0078 ---- 0000                         dw          #0
+               .segment end "Task: Simple LMT70 ADC"
+               
+               
+               .segment begin "Task: Simple LMT70 ADC"
+               simpleLmt70Adc/initialize:
+               ;? // Schedule the first execution
+               ;? fwScheduleTask(1);
+0079 ---- 0001                         ld          R0, #1
+007a ---- 0c67                         st          R0, [#(pFwTaskExecuteScheduleTable + 0)]
+               simpleLmt70Adc/initializeDone:
+007b ---- adb7                         rts         
+               
+               
+               
+               
+               simpleLmt70Adc/execute:
+               ;? //Disable scaling to use internal BG reference of 1.44V
+               ;? adcDisableInputScaling();
+007c ---- 14a0                         jsr         AdcDisableInputScaling
+               ;? 
+               ;? // Enable the ADC
+               ;? adcEnableSync(ADC_REF_FIXED, ADC_SAMPLE_TIME_682_US, ADC_TRIGGER_MANUAL);
+007d ---- 705d                         ld          R7, #(((32 - 1) * 24) >> 3)
+007e ---- 6003                         ld          R6, #3
+007f ---- 14a5                         jsr         FwDelay
+0080 ---- 7001                         ld          R7, #((0 | (((11 < 6) & (!0)) * ADI16_ADCREF_REF_ON_IDLE)) | ADI16_ADCREF_EN)
+0081 ---- 1462                         jsr         AdiDdiAcquire
+0082 ---- fb4d                         out         R7, [#IOP_ADISET_ADCREF]
+0083 8609 7101                         ld          R7, #((9 << IOB_ANAIF_ADCCTL_START_SRC) | 0x0001)
+0085 ---- 6431                         iobset      #IOB_WUC_ADCCLKCTL_REQ, [#IOP_WUC_ADCCLKCTL]
+               /id0083:
+0086 ---- 2531                         iobtst      #IOB_WUC_ADCCLKCTL_ACK, [#IOP_WUC_ADCCLKCTL]
+0087 ---- a6fe                         biob0       /id0083
+0088 ---- fb00                         out         R7, [#IOP_ANAIF_ADCCTL]
+0089 ---- 7058                         ld          R7, #(11 << BI_ADI16_ADC_SMPL_CYCLE_EXP)
+008a ---- fb4c                         out         R7, [#IOP_ADISET_ADC]
+008b ---- 7003                         ld          R7, #(ADI16_ADC_EN | ADI16_ADC_RESET_N)
+008c ---- fb4c                         out         R7, [#IOP_ADISET_ADC]
+008d ---- fd47                         nop         
+008e ---- fb4c                         out         R7, [#IOP_ADISET_ADC]
+008f ---- 1465                         jsr         AdiDdiRelease
+               ;? 
+               ;? // Sample the LMT70 temp sensor 1
+               ;? adcSelectGpioInput(AUXIO_A_LMT70_IN); //DIO_25
+0090 ---- 7005                         ld          R7, #5
+0091 ---- 14ab                         jsr         AdccompbSelectGpioInput
+               ;? 
+               ;? // Sample the ADC
+               ;? S16 adcValue;
+               ;? adcGenManualTrigger();
+0092 ---- 6403                         iobset      #0, [#IOP_ANAIF_ADCTRIG]
+               ;? adcReadFifo(adcValue);
+0093 ---- 001f                         ld          R0, #EVCTL_SCEEVSEL_ADC_FIFO_NOT_EMPTY
+0094 ---- 8b2c                         out         R0, [#IOP_EVCTL_SCEWEVSEL]
+0095 ---- fdb1                         wev1        #WEVSEL_PROG
+0096 ---- 8902                         in          R0, [#IOP_ANAIF_ADCFIFO]
+               ;? output.adcValue = adcValue;
+0097 ---- 0c76                         st          R0, [#simpleLmt70Adc/output/adcValue]
+               ;? 
+               ;? // Disable the ADC
+               ;? adcDisable();
+0098 ---- 14b8                         jsr         AdcDisable
+               ;? 
+               ;? fwGenAlertInterrupt();
+0099 ---- 086c                         ld          R0, [#fwCtrlInt/bvTaskIoAlert]
+009a ---- 8201                         or          R0, #(1 << 0)
+009b ---- 0c6c                         st          R0, [#fwCtrlInt/bvTaskIoAlert]
+               ;? 
+               ;? // Schedule the next execution
+               ;? fwScheduleTask(1);
+009c ---- 0001                         ld          R0, #1
+009d ---- 0c67                         st          R0, [#(pFwTaskExecuteScheduleTable + 0)]
+               simpleLmt70Adc/executeDone:
+009e ---- adb7                         rts         
+               
+               
+               
+               
+               simpleLmt70Adc/terminate:
+               simpleLmt70Adc/terminateDone:
+009f ---- adb7                         rts         
+               .segment end "Task: Simple LMT70 ADC"
+               
+               
+               .segment begin "Procedure Libary"
+               ; CLOBBERS:
+               ;     R7
+               AdcDisableInputScaling:
+                                       ; Disable the ADC input scaling
+00a0 ---- 1462                         jsr         AdiDdiAcquire
+00a1 ---- 7100                         ld          R7, #ADI16_ADC_SCALE_DIS
+00a2 ---- fb4c                         out         R7, [#IOP_ADISET_ADC]
+                                       ; Release the ADI interface
+00a3 ---- 1465                         jsr         AdiDdiRelease
+               
+00a4 ---- adb7                         rts
+               
+               
+               
+               
+               ; 3 + 5 CPU cycles = 16 clock cycles = 0.66 microsecond are added to the specified delay (parameter
+               ; loading and timer configuration)
+               ;
+               ; PARAMETERS:
+               ;     R7 = Delay
+               ;     R6 = Prescaler exponent
+               ;
+               ; CLOBBERS:
+               ;     R6
+               FwDelay:
+                                       ; Set the delay
+00a5 ---- fb0c                         out         R7, [#IOP_TIMER_T0TARGET]
+               
+                                       ; Configure the timer (from clock, single-mode, prescaler exponent = R6)
+00a6 ---- eda4                         lsl         R6, #4
+00a7 ---- eb09                         out         R6, [#IOP_TIMER_T0CFG]
+               
+                                       ; Start the timer, wait for it to trigger, and stop it
+00a8 ---- 640b                         iobset      #0, [#IOP_TIMER_T0CTL]
+00a9 ---- cdb1                         wev1        #WEVSEL_TIMER0
+00aa ---- adb7                         rts
+               
+               
+               
+               
+               ; PARAMETERS:
+               ;     R7 = AUX I/O index (0-7)
+               ;
+               ; CLOBBERS:
+               ;     R6, R7
+               AdccompbSelectGpioInput:
+                                       ; Make sure that the AUX I/O index is valid
+00ab ---- f007                         and         R7, #0x0007
+               
+                                       ; Disconnect all signals
+00ac ---- 1462                         jsr         AdiDdiAcquire
+00ad 86ff 63f8                         ld          R6, #(BV_ADI16_MUX2_ADCCOMPB_IN | BV_ADI16_MUX3_ADCCOMPB_IN)
+00af ---- eb51                         out         R6, [#IOP_ADICLR_MUX2_MUX3]
+               
+                                       ; Connect the specified GPIO
+00b0 8680 6000                         ld          R6, #ADI16_MUX3_ADCCOMPB_IN_AUXIO0
+00b2 ---- ed8f                         lsr         R6, R7
+00b3 ---- eb49                         out         R6, [#IOP_ADISET_MUX2_MUX3]
+               
+                                       ; Ensure that it has taken effect
+00b4 ---- fd47                         nop         ; Workaround for back-to-back ADI/DDI accesses
+00b5 ---- eb49                         out         R6, [#IOP_ADISET_MUX2_MUX3]
+00b6 ---- 1465                         jsr         AdiDdiRelease
+00b7 ---- adb7                         rts
+               
+               
+               
+               
+               ; CLOBBERS:
+               ;     R7
+               AdcDisable:
+                                       ; Disable the ADC reference
+00b8 ---- 1462                         jsr         AdiDdiAcquire
+00b9 ---- 7079                         ld          R7, #((ADI16_ADCREF_EN | ADI16_ADCREF_REF_ON_IDLE) | (ADI16_ADCREF_SRC | (ADI16_ADCREF_EXT | ADI16_ADCREF_IOMUX)))
+00ba ---- fb55                         out         R7, [#IOP_ADICLR_ADCREF]
+               
+                                       ; Assert reset and disable the ADC
+00bb ---- 71fb                         ld          R7, #((ADI16_ADC_EN | ADI16_ADC_RESET_N) | (BV_ADI16_ADC_SMPL_CYCLE_EXP | (BV_ADI16_ADC_SMPL_MODE | ADI16_ADC_SCALE_DIS)))
+00bc ---- fb54                         out         R7, [#IOP_ADICLR_ADC]
+               
+                                       ; Ensure that it has taken effect
+00bd ---- fd47                         nop         ; Workaround for back-to-back ADI/DDI accesses
+00be ---- fb54                         out         R7, [#IOP_ADICLR_ADC]
+00bf ---- 1465                         jsr         AdiDdiRelease
+               
+                                       ; Disable the ADC clock (no need to wait since IOB_WUC_ADCCLKCTL_ACK goes low immediately)
+00c0 ---- 4431                         iobclr      #IOB_WUC_ADCCLKCTL_REQ, [#IOP_WUC_ADCCLKCTL]
+               
+                                       ; Disable the ADC data interface
+00c1 ---- 4400                         iobclr      #0, [#IOP_ANAIF_ADCCTL]
+               
+00c2 ---- adb7                         rts
+               .segment end "Procedure Libary"
+               
+
+; Generated by DESKTOP-1CPIAJB at 2017-01-17 12:51:40.344
