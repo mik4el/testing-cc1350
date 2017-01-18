@@ -260,7 +260,7 @@ void adcCallback(uint16_t adcValue)
     uint32_t calADC12_gain = AUXADCGetAdjustmentGain(AUXADC_REF_FIXED);
     int8_t calADC12_offset = AUXADCGetAdjustmentOffset(AUXADC_REF_FIXED);
     latestAdcValue = AUXADCAdjustValueForGainAndOffset(adcValue, calADC12_gain, calADC12_offset);
-    latestTemp = -0.193 * latestAdcValue * 1440 / 4095 + 212.009; // constants from LMT70 datasheet
+    latestTemp = -0.193 * latestAdcValue * (AUXADC_FIXED_REF_VOLTAGE_UNSCALED / 1000)  / 4095 + 212.009; // constants from LMT70 datasheet
     latestInternalTempValue = AONBatMonTemperatureGetDegC();
 
     /* Post event */
