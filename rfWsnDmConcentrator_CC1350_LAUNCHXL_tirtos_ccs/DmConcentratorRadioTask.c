@@ -71,9 +71,6 @@
 
 #define CONCENTRATOR_0M_TXPOWER    -10
 
-#define FRACT_BITS 8
-#define INT2FIXED(x) (((uint16_t)x) << FRACT_BITS)
-
 /***** Variable declarations *****/
 static Task_Params concentratorRadioTaskParams;
 Task_Struct concentratorRadioTask; /* not static so you can see in ROV */
@@ -363,7 +360,7 @@ static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorP
         timeSinceLastRx = ((Clock_getTicks() * Clock_tickPeriod) / 1000000) - timeForLastRXForAdress(sensorPacket.header.sourceAddress);
     }
 
-    SEB_initTLM(sensorPacket.batt, INT2FIXED(sensorPacket.internalTemp), timeSinceLastRx);
+    SEB_initTLM(sensorPacket.batt, sensorPacket.temp, timeSinceLastRx);
 
     for (txCnt = 0; txCnt < SimpleBeacon_AdvertisementTimes; txCnt++)
     {
@@ -474,23 +471,12 @@ static void rxDoneCallback(EasyLink_RxPacket * rxPacket, EasyLink_Status status)
         /* Check that this is a valid packet */
         tmpRxPacket = (union ConcentratorPacket*)(rxPacket->payload);
 
-        /* If this is a known packet */
-        if (tmpRxPacket->header.packetType == RADIO_PACKET_TYPE_ADC_SENSOR_PACKET)
+        if (tmpRxPacket->header.packetType == RADIO_PACKET_TYPE_DM_SENSOR_PACKET)
         {
             /* Save packet */
             latestRxPacket.header.sourceAddress = rxPacket->payload[0];
             latestRxPacket.header.packetType = rxPacket->payload[1];
-            latestRxPacket.adcSensorPacket.adcValue = (rxPacket->payload[2] << 8) | rxPacket->payload[3];
-
-            /* Signal packet received */
-            Event_post(radioOperationEventHandle, RADIO_EVENT_VALID_PACKET_RECEIVED);
-        }
-        else if (tmpRxPacket->header.packetType == RADIO_PACKET_TYPE_DM_SENSOR_PACKET)
-        {
-            /* Save packet */
-            latestRxPacket.header.sourceAddress = rxPacket->payload[0];
-            latestRxPacket.header.packetType = rxPacket->payload[1];
-            latestRxPacket.dmSensorPacket.adcValue = (rxPacket->payload[2] << 8) | rxPacket->payload[3];
+            latestRxPacket.dmSensorPacket.temp = (rxPacket->payload[2] << 8) | rxPacket->payload[3];
             latestRxPacket.dmSensorPacket.batt = (rxPacket->payload[4] << 8) | rxPacket->payload[5];
             latestRxPacket.dmSensorPacket.internalTemp = (rxPacket->payload[6] << 24) |
                                                          (rxPacket->payload[7] << 16) |

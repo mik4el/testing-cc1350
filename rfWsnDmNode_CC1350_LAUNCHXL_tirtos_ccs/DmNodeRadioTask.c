@@ -57,6 +57,7 @@
     #define DEVICE_FAMILY_PATH(x) <ti/devices/DEVICE_FAMILY/x>
     #include DEVICE_FAMILY_PATH(driverlib/trng.h)
     #include DEVICE_FAMILY_PATH(driverlib/aon_batmon.h)
+    #include DEVICE_FAMILY_PATH(driverlib/aux_adc.h) //for ADC operations
 #else
     #error "You must define DEVICE_FAMILY at the project level as one of cc26x0, cc26x0r2, cc13x0, etc."
 #endif
@@ -81,10 +82,6 @@
 #define NORERADIO_ACK_TIMEOUT_TIME_MS (160)
 
 #define NODE_0M_TXPOWER    -10
-
-#define FRACT_BITS 8
-#define INT2FIXED(x) (((uint16_t)x) << FRACT_BITS)
-
 
 /***** Type declarations *****/
 struct RadioOperation {
@@ -125,6 +122,10 @@ static void rxDoneCallback(EasyLink_RxPacket * rxPacket, EasyLink_Status status)
 static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorPacket);
 
 /***** Function definitions *****/
+double convertADCToTempDouble(uint16_t adcValue) {
+    return -0.193 * adcValue * (AUXADC_FIXED_REF_VOLTAGE_UNSCALED / 1000)  / 4095 + 212.009; // constants from LMT70 datasheet
+}
+
 void NodeRadioTask_toggleBLE(void) {
     if (advertiserType == Node_AdvertiserUrl) {
         advertiserType = Node_AdvertiserNone;
@@ -248,7 +249,7 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
 
             dmInternalTempSensorPacket.batt = AONBatMonBatteryVoltageGet();
             dmInternalTempSensorPacket.internalTemp = AONBatMonTemperatureGetDegC();
-            dmInternalTempSensorPacket.adcValue = adcData;
+            dmInternalTempSensorPacket.temp = FLOAT2FIXED(convertADCToTempDouble(adcData));
             dmInternalTempSensorPacket.button = !PIN_getInputValue(Board_PIN_BUTTON0);
 
             sendDmPacket(dmInternalTempSensorPacket, NODERADIO_MAX_RETRIES, NORERADIO_ACK_TIMEOUT_TIME_MS);
@@ -334,11 +335,11 @@ static void sendDmPacket(struct DualModeInternalTempSensorPacket sensorPacket, u
     currentRadioOperation.easyLinkTxPacket.dstAddr[0] = RADIO_CONCENTRATOR_ADDRESS;
 
     /* Copy ADC packet to payload
-     * Note that the EasyLink API will implcitily both add the length byte and the destination address byte. */
+     * Note that the EasyLink API will implicitly both add the length byte and the destination address byte. */
     currentRadioOperation.easyLinkTxPacket.payload[0] = dmInternalTempSensorPacket.header.sourceAddress;
     currentRadioOperation.easyLinkTxPacket.payload[1] = dmInternalTempSensorPacket.header.packetType;
-    currentRadioOperation.easyLinkTxPacket.payload[2] = (dmInternalTempSensorPacket.adcValue & 0xFF00) >> 8;
-    currentRadioOperation.easyLinkTxPacket.payload[3] = (dmInternalTempSensorPacket.adcValue & 0xFF);
+    currentRadioOperation.easyLinkTxPacket.payload[2] = (dmInternalTempSensorPacket.temp & 0xFF00) >> 8;
+    currentRadioOperation.easyLinkTxPacket.payload[3] = (dmInternalTempSensorPacket.temp & 0xFF);
     currentRadioOperation.easyLinkTxPacket.payload[4] = (dmInternalTempSensorPacket.batt & 0xFF00) >> 8;
     currentRadioOperation.easyLinkTxPacket.payload[5] = (dmInternalTempSensorPacket.batt & 0xFF);
     currentRadioOperation.easyLinkTxPacket.payload[6] = (dmInternalTempSensorPacket.internalTemp & 0xFF000000) >> 24;

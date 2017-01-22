@@ -88,7 +88,6 @@ static Event_Handle nodeEventHandle;
 static uint16_t latestAdcValue;
 static int32_t latestInternalTempValue;
 static Node_BLEActiveType bleActive = Node_BLEActiveTypeNotActive;
-double latestTemp;
 
 /* Pin driver handle */
 static PIN_Handle buttonPinHandle;
@@ -239,8 +238,8 @@ static void updateLcd(void)
     Display_clear(hDisplayLcd);
     Display_printf(hDisplayLcd, 0, 0, "NodeID: 0x%02x", nodeAddress);
     Display_printf(hDisplayLcd, 1, 0, "ADC: %04d", latestAdcValue);
-    Display_printf(hDisplayLcd, 2, 0, "Temp A: %3.3f", latestTemp);
-    Display_printf(hDisplayLcd, 3, 0, "Temp I: %d", latestInternalTempValue);
+    Display_printf(hDisplayLcd, 2, 0, "TempA: %3.3f", FIXED2DOUBLE(FLOAT2FIXED(convertADCToTempDouble(latestAdcValue))));  // Convert to match concentrator fixed 8.8 resolution
+    Display_printf(hDisplayLcd, 3, 0, "TempI: %d", latestInternalTempValue);
 
     /* print to UART clear screen, put cursor to beginning of terminal and print the header */
     Display_printf(hDisplaySerial, 0, 0, "\033[2J \033[0;0HNode ID: 0x%02x", nodeAddress);
@@ -260,7 +259,6 @@ void adcCallback(uint16_t adcValue)
     uint32_t calADC12_gain = AUXADCGetAdjustmentGain(AUXADC_REF_FIXED);
     int8_t calADC12_offset = AUXADCGetAdjustmentOffset(AUXADC_REF_FIXED);
     latestAdcValue = AUXADCAdjustValueForGainAndOffset(adcValue, calADC12_gain, calADC12_offset);
-    latestTemp = -0.193 * latestAdcValue * (AUXADC_FIXED_REF_VOLTAGE_UNSCALED / 1000)  / 4095 + 212.009; // constants from LMT70 datasheet
     latestInternalTempValue = AONBatMonTemperatureGetDegC();
 
     /* Post event */

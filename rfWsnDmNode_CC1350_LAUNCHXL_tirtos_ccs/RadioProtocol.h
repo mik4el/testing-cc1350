@@ -63,7 +63,7 @@ struct DualModeSensorPacket {
 
 struct DualModeInternalTempSensorPacket {
     struct PacketHeader header;
-    uint16_t adcValue;
+    uint16_t temp; //Fixed 8.8 notation
     uint16_t batt;
     int32_t internalTemp;
     uint32_t time100MiliSec;

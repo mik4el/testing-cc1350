@@ -50,7 +50,7 @@ typedef enum
 {
     Node_AdvertiserNone =     0, //None
     Node_AdvertiserUrl =      1, //Eddystone interleaved URL and TLM
-    Node_AdvertiserTypeEnd =  2, //End of advertisemnt type enum's
+    Node_AdvertiserTypeEnd =  2, //End of advertisement type enum's
 } Node_AdvertiserType;
 
 /* Initializes the NodeRadioTask and creates all TI-RTOS objects */
@@ -64,5 +64,13 @@ void NodeRadioTask_toggleBLE();
 
 /* Get node address, return 0 if node address has not been set */
 uint8_t nodeRadioTask_getNodeAddr(void);
+
+/* Convert adc value to double */
+double convertADCToTempDouble(uint16_t adcValue);
+
+#define FRACT_BITS 8
+#define FIXED2DOUBLE(x) (((double)(x)) / (1 << FRACT_BITS))
+#define FLOAT2FIXED(x) ((int)((x) * (1 << FRACT_BITS)))
+#define INT2FIXED(x) ((x) << FRACT_BITS)
 
 #endif /* TASKS_DMNODERADIOTASKTASK_H_ */

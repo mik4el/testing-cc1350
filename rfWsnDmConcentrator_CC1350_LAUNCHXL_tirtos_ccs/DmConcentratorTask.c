@@ -69,7 +69,7 @@
 /***** Type declarations *****/
 struct AdcSensorNode {
     uint8_t address;
-    uint16_t latestAdcValue;
+    uint16_t latestTempValue; //fixed 8.8 notation
     int32_t latestInternalTempValue;
     uint8_t button;
     int8_t latestRssi;
@@ -211,7 +211,7 @@ static void packetReceivedCallback(union ConcentratorPacket* packet, int8_t rssi
     {
         /* Save the values */
         latestActiveAdcSensorNode.address = packet->header.sourceAddress;
-        latestActiveAdcSensorNode.latestAdcValue = packet->dmSensorPacket.adcValue;
+        latestActiveAdcSensorNode.latestTempValue = packet->dmSensorPacket.temp;
         latestActiveAdcSensorNode.latestInternalTempValue = packet->dmSensorPacket.internalTemp;
         latestActiveAdcSensorNode.button = packet->dmSensorPacket.button;
         latestActiveAdcSensorNode.latestRssi = rssi;
@@ -239,7 +239,7 @@ static void updateNode(struct AdcSensorNode* node) {
     for (i = 0; i < CONCENTRATOR_MAX_NODES; i++) {
         if (knownSensorNodes[i].address == node->address)
         {
-            knownSensorNodes[i].latestAdcValue = node->latestAdcValue;
+            knownSensorNodes[i].latestTempValue = node->latestTempValue;
             knownSensorNodes[i].latestInternalTempValue = node->latestInternalTempValue;
             knownSensorNodes[i].latestRssi = node->latestRssi;
             knownSensorNodes[i].button = node->button;
@@ -278,7 +278,7 @@ static void updateLcd(void) {
 
     Display_clear(hDisplayLcd);
     Display_printf(hDisplayLcd, 0, 0, "Mik4el");
-    Display_printf(hDisplayLcd, 2, 0, "Nodes TempI RSSI");
+    Display_printf(hDisplayLcd, 2, 0, "Nodes TempA RSSI");
 
     //clear screen, put cursor to beginning of terminal and print the header
     Display_printf(hDisplaySerial, 0, 0, "\033[2J \033[0;0HNodes    Value    RSSI");
@@ -299,13 +299,14 @@ static void updateLcd(void) {
         {
             selectedChar = ' ';
         }
+
         /* print to LCD */
-        Display_printf(hDisplayLcd, currentLcdLine, 0, "%c0x%02x %d  %04d", selectedChar,
-                nodePointer->address, nodePointer->latestInternalTempValue, nodePointer->latestRssi);
+        Display_printf(hDisplayLcd, currentLcdLine, 0, "%c0x%02x %f %04d", selectedChar,
+                nodePointer->address, FIXED2DOUBLE(nodePointer->latestTempValue), nodePointer->latestRssi);
 
         /* print to UART */
-        Display_printf(hDisplaySerial, 0, 0, "%c0x%02x    %d    %04d", selectedChar,
-                nodePointer->address, nodePointer->latestInternalTempValue, nodePointer->latestRssi);
+        Display_printf(hDisplayLcd, currentLcdLine, 0, "%c0x%02x %f %04d", selectedChar,
+                nodePointer->address, FIXED2DOUBLE(nodePointer->latestTempValue), nodePointer->latestRssi);
 
         nodePointer++;
         currentLcdLine++;
@@ -340,7 +341,7 @@ static void updateLcd(void) {
         }
 
         /* print to LCD */
-        Display_printf(hDisplayLcd, currentLcdLine+1, 0, "%s", advMode);
+        Display_printf(hDisplayLcd, currentLcdLine+2, 0, "Beacon: %s", advMode);
         /* print to UART */
         Display_printf(hDisplaySerial, 0, 0, "Advertiser Mode: %s", advMode);
     }

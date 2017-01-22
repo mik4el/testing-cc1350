@@ -53,7 +53,6 @@ typedef enum
 
 union ConcentratorPacket {
     struct PacketHeader header;
-    struct AdcSensorPacket adcSensorPacket;
     struct DualModeInternalTempSensorPacket dmSensorPacket;
 };
 
@@ -73,5 +72,10 @@ void ConcentratorRadioTask_registerPacketReceivedCallback(ConcentratorRadio_Pack
 
 /* set BLE advertiser settings */
 void ConcentratorRadioTask_setAdvertiser(ConcentratorAdvertiser advertiser);
+
+#define FRACT_BITS 8
+#define FIXED2DOUBLE(x) (((double)(x)) / (1 << FRACT_BITS))
+#define FLOAT2FIXED(x) ((int)((x) * (1 << FRACT_BITS)))
+#define INT2FIXED(x) ((x) << FRACT_BITS)
 
 #endif /* TASKS_DMCONCENTRATORRADIOTASKTASK_H_ */
