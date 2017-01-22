@@ -93,7 +93,7 @@ static struct SensorNodeRX* lastAddedSensorNodeRX = knownSensorNodeRXs;
 
 static ConcentratorAdvertiser bleAdvertiser = {
         CONCENTRATOR_ADVERTISE_INVALID,
-        Concentrator_AdvertiserUrl
+        Concentrator_AdvertiserNone
 };
 
 struct SensorNodeRX {
@@ -109,10 +109,12 @@ static void rxDoneCallback(EasyLink_RxPacket * rxPacket, EasyLink_Status status)
 static void notifyPacketReceived(union ConcentratorPacket* latestRxPacket);
 static void sendAck(uint8_t latestSourceAddress);
 static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorPacket);
+static void sendEmptyBleAdvertisement(void);
 static void addNewNodeRX(struct SensorNodeRX* node);
 static void updateNodeRX(struct SensorNodeRX* node);
 static uint8_t isKnownNodeAddress(uint8_t address);
 static uint32_t timeForLastRXForAdress(uint8_t address);
+static uint8_t numberOfNodes(void);
 
 /* Pin driver handle */
 static PIN_Handle ledPinHandle;
@@ -261,6 +263,10 @@ static void concentratorRadioTaskFunction(UArg arg0, UArg arg1)
             sendBleAdvertisement(latestRxPacket.dmSensorPacket);
         }
 
+        if (bleAdvertiser.type == Concentrator_AdvertiserNone) {
+            sendEmptyBleAdvertisement();
+        }
+
         /* If invalid packet received */
         if (events & RADIO_EVENT_INVALID_PACKET_RECEIVED)
         {
@@ -286,6 +292,18 @@ static uint8_t isKnownNodeAddress(uint8_t address) {
         }
     }
     return found;
+}
+
+static uint8_t numberOfNodes(void) {
+    uint8_t i;
+    for (i = 0; i < CONCENTRATOR_MAX_NODES; i++)
+    {
+        if (knownSensorNodeRXs[i].address == 0)
+        {
+            break;
+        }
+    }
+    return i;
 }
 
 static uint32_t timeForLastRXForAdress(uint8_t address) {
@@ -346,6 +364,50 @@ static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorP
     }
 
     SEB_initTLM(sensorPacket.batt, INT2FIXED(sensorPacket.internalTemp), timeSinceLastRx);
+
+    for (txCnt = 0; txCnt < SimpleBeacon_AdvertisementTimes; txCnt++)
+    {
+        for (chan = 37; chan < 40; chan++)
+        {
+            SEB_sendFrame(SEB_FrameType_Url, bleMacAddr, 1, (uint64_t) 1<<chan);
+            SEB_sendFrame(SEB_FrameType_Tlm, bleMacAddr, 1, (uint64_t) 1<<chan);
+        }
+
+        // Sleep on all but last advertisement
+        if(txCnt+1 < SimpleBeacon_AdvertisementTimes)
+        {
+            Task_sleep(SimpleBeacon_AdvertisementIntervals[txCnt]);
+        }
+    }
+
+#ifdef __CC1350_LAUNCHXL_BOARD_H__
+    //Switch RF switch to Sub1G antenna
+    PIN_setOutputValue(ledPinHandle, Board_DIO1_RFSW, 1);
+#endif //__CC1350_LAUNCHXL_BOARD_H__
+
+    /* Toggle activity LED */
+    PIN_setOutputValue(ledPinHandle, CONCENTRATOR_BLE_ACTIVITY_LED,!PIN_getOutputValue(CONCENTRATOR_BLE_ACTIVITY_LED));
+}
+
+static void sendEmptyBleAdvertisement(void)
+{
+
+#ifdef __CC1350_LAUNCHXL_BOARD_H__
+    //Swtich RF switch to 2.4G antenna
+    PIN_setOutputValue(ledPinHandle, Board_DIO1_RFSW, 0);
+#endif //__CC1350_LAUNCHXL_BOARD_H__
+
+    /* Toggle activity LED */
+    PIN_setOutputValue(ledPinHandle, CONCENTRATOR_BLE_ACTIVITY_LED,!PIN_getOutputValue(CONCENTRATOR_BLE_ACTIVITY_LED));
+
+    // Prepare TLM frame
+    uint8_t txCnt, chan;
+    char url_format[] = "https://m4bd.se/c/%02x/";
+    char url_ready[21];
+    sprintf(url_ready, url_format, concentratorAddress);
+    SEB_initUrl(url_ready , CONCENTRATOR_0M_TXPOWER);
+
+    SEB_initTLM(0, INT2FIXED((uint32_t)numberOfNodes()), 0);
 
     for (txCnt = 0; txCnt < SimpleBeacon_AdvertisementTimes; txCnt++)
     {

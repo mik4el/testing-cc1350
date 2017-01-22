@@ -62,6 +62,7 @@
 #define CONCENTRATOR_TASK_PRIORITY   3
 #define CONCENTRATOR_EVENT_ALL                         0xFFFFFFFF
 #define CONCENTRATOR_EVENT_NEW_ADC_SENSOR_VALUE    (uint32_t)(1 << 0)
+#define CONCENTRATOR_EVENT_UPDATE_LCD    (uint32_t)(1 << 1)
 #define CONCENTRATOR_MAX_NODES 7
 #define CONCENTRATOR_DISPLAY_LINES 10
 
@@ -195,6 +196,12 @@ static void concentratorTaskFunction(UArg arg0, UArg arg1)
             /* Update the values on the LCD */
             updateLcd();
         }
+
+        if (events & CONCENTRATOR_EVENT_UPDATE_LCD)
+        {
+            /* Update the values on the LCD */
+            updateLcd();
+        }
     }
 }
 
@@ -240,7 +247,6 @@ static void updateNode(struct AdcSensorNode* node) {
             advertiser.type = Concentrator_AdvertiserUrl;
             advertiser.sourceAddress = knownSensorNodes[i].address;
             ConcentratorRadioTask_setAdvertiser(advertiser);
-
             break;
         }
     }
@@ -325,11 +331,15 @@ static void updateLcd(void) {
 
         if (advertiser.type == Concentrator_AdvertiserUrl)
         {
-             strncpy(advMode, "Eddystone URL", 13);
+             strncpy(advMode, "Nodes", 13);
+        }
+
+        if (advertiser.type == Concentrator_AdvertiserNone)
+        {
+             strncpy(advMode, "Self", 13);
         }
 
         /* print to LCD */
-        //Display_printf(hDisplayLcd, currentLcdLine+1, 0, "Adv Mode:");
         Display_printf(hDisplayLcd, currentLcdLine+1, 0, "%s", advMode);
         /* print to UART */
         Display_printf(hDisplaySerial, 0, 0, "Advertiser Mode: %s", advMode);
@@ -347,12 +357,22 @@ void buttonCallback(PIN_Handle handle, PIN_Id pinId)
 
     if (PIN_getInputValue(Board_PIN_BUTTON0) == 0)
     {
+        // Toggle between beaconing for nodes or concentrator
+        if (advertiser.type == Concentrator_AdvertiserNone) {
+            advertiser.type = Concentrator_AdvertiserUrl;
+            advertiser.sourceAddress = latestActiveAdcSensorNode.address;
+        } else {
+            advertiser.type = Concentrator_AdvertiserNone;
+            advertiser.sourceAddress = CONCENTRATOR_ADVERTISE_INVALID;
+        }
+
         //trigger LCD update
-        Event_post(concentratorEventHandle, CONCENTRATOR_EVENT_NEW_ADC_SENSOR_VALUE);
+        ConcentratorRadioTask_setAdvertiser(advertiser);
+        Event_post(concentratorEventHandle, CONCENTRATOR_EVENT_UPDATE_LCD);
     }
     else if (PIN_getInputValue(Board_PIN_BUTTON1) == 0)
     {
         //trigger LCD update
-        Event_post(concentratorEventHandle, CONCENTRATOR_EVENT_NEW_ADC_SENSOR_VALUE);
+        Event_post(concentratorEventHandle, CONCENTRATOR_EVENT_UPDATE_LCD);
     }
 }
