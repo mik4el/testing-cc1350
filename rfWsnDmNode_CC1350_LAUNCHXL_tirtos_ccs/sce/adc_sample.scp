@@ -12,11 +12,7 @@
         <desc><![CDATA[Sampling the LMT70 on DIO25 on the CC1350 according to TI application note.]]></desc>
         <tattr name="BIN_COUNT" desc="Number of ADC value bins" type="dec" content="const" scope="task" min="0" max="65535">5</tattr>
         <tattr name="THRESHOLD_COUNT" desc="Number of bin thresholds" type="expr" content="const" scope="task" min="0" max="0">BIN_COUNT + 1</tattr>
-        <tattr name="cfg.changeMask" type="dec" content="struct" scope="task" min="0" max="65535">0</tattr>
-        <tattr name="cfg.minReportInterval" type="dec" content="struct" scope="task" min="0" max="65535">0</tattr>
         <tattr name="output.adcValue" type="dec" content="struct" scope="task" min="0" max="65535">0</tattr>
-        <tattr name="state.oldAdcMaskedBits" type="dec" content="struct" scope="task" min="0" max="65535">0</tattr>
-        <tattr name="state.samplesSinceLastReport" desc="The number of samples since last report was sent" type="dec" content="struct" scope="task" min="0" max="65535">0</tattr>
         <resource_ref name="ADC" enabled="1"/>
         <resource_ref name="Analog Open-Drain Pins" enabled="0"/>
         <resource_ref name="Analog Open-Source Pins" enabled="0"/>
@@ -112,7 +108,7 @@
             </io_usage>
         </resource_ref>
         <sccode name="event0"><![CDATA[]]></sccode>
-        <sccode name="execute"><![CDATA[//Disable scaling to use internal BG reference of 1.44V
+        <sccode name="execute"><![CDATA[//Disable scaling to use internal reference of 1.4785V
 adcDisableInputScaling();
 
 // Enable the ADC

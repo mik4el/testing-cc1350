@@ -52,26 +52,18 @@ static void taskAlertCallback(void);
 
 
 /***** Function definitions *****/
-void SceAdc_init(uint32_t samplingTime, uint32_t minReportInterval, uint16_t adcChangeMask) {
+void SceAdc_init(void) {
     // Initialize the Sensor Controller
     scifOsalInit();
     scifOsalRegisterCtrlReadyCallback(ctrlReadyCallback);
     scifOsalRegisterTaskAlertCallback(taskAlertCallback);
     scifInit(&scifDriverSetup);
-    scifStartRtcTicksNow(samplingTime);
 
-    SCIF_SIMPLE_LMT70_ADC_CFG_T* pCfg = scifGetTaskStruct(SCIF_SIMPLE_LMT70_ADC_TASK_ID, SCIF_STRUCT_CFG);
-    pCfg->changeMask = adcChangeMask;
-    //Set minimum report interval in units of samplingTime
-    pCfg->minReportInterval = minReportInterval;
-}
-
-void SceAdc_setReportInterval(uint32_t minReportInterval, uint16_t adcChangeMask) {
-    //Set the report interval and min change in the SC config structure
-    SCIF_SIMPLE_LMT70_ADC_CFG_T* pCfg = scifGetTaskStruct(SCIF_SIMPLE_LMT70_ADC_TASK_ID, SCIF_STRUCT_CFG);
-    pCfg->changeMask = adcChangeMask;
-    //Set minimum report interval in units of samplingTime
-    pCfg->minReportInterval = minReportInterval;
+    // Setup period for checking ADC
+    uint16_t seconds = 60*10;
+    uint16_t second_parts = 0;
+    uint32_t period = (seconds << 16) | second_parts;
+    scifStartRtcTicksNow(period);
 }
 
 void SceAdc_start(void) {

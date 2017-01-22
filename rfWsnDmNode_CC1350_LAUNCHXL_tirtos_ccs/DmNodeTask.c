@@ -183,8 +183,8 @@ static void nodeTaskFunction(UArg arg0, UArg arg1)
         System_abort("Error initializing board 3.3V domain pins\n");
     }
 
-    /* Start the SCE ADC task with 1s sample period and reacting to change in ADC value. */
-    SceAdc_init(0x00100000, NODE_ADCTASK_REPORTINTERVAL_FAST, NODE_ADCTASK_CHANGE_MASK);
+    /* Start the SCE ADC task. */
+    SceAdc_init();
     SceAdc_registerAdcCallback(adcCallback);
     SceAdc_start();
 
