@@ -175,13 +175,7 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
         System_abort("EasyLink_init failed");
     }
 
-
-    /* If you wish to use a frequency other than the default use
-     * the below API
-     * EasyLink_setFrequency(868000000);
-     */
-
-    /* Use the True Random Number Generator to generate sensor node address randomly */;
+    /* Use the True Random Number Generator to generate sensor node address randomly */
     Power_setDependency(PowerCC26XX_PERIPH_TRNG);
     TRNGEnable();
     /* Do not accept the same address as the concentrator, in that case get a new random value */
@@ -189,7 +183,7 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
     {
         while (!(TRNGStatusGet() & TRNG_NUMBER_READY))
         {
-            //wiat for randum number generator
+            //wait for random number generator
         }
         nodeAddress = (uint8_t)TRNGNumberGet(TRNG_LOW_WORD);
     } while (nodeAddress == RADIO_CONCENTRATOR_ADDRESS);
@@ -206,27 +200,27 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
     dmInternalTempSensorPacket.header.sourceAddress = nodeAddress;
     dmInternalTempSensorPacket.header.packetType = RADIO_PACKET_TYPE_DM_SENSOR_PACKET;
 
-    /* initialise the Simple Beacon module called dirrectly for Prop Adv
+    /* Initialize the Simple Beacon module
      * Set multiclient mode to true
      */
     SimpleBeacon_init(true);
 
-    /* initialise the Simple Eddystone Beacon module
+    /* Initialize the Simple Eddystone Beacon module
      * Set multiclient mode to true
      */
     SEB_init(true);
     SimpleBeacon_getIeeeAddr(bleMacAddr);
-
-#ifdef __CC1350_LAUNCHXL_BOARD_H__
-    /* Enable power to RF switch to 2.4G antenna */
-    PIN_setOutputValue(ledPinHandle, Board_DIO30_SWPWR, 1);
-#endif //__CC1350_LAUNCHXL_BOARD_H__
 
     /* Enter main task loop */
     while (1)
     {
         /* Wait for an event */
         uint32_t events = Event_pend(radioOperationEventHandle, 0, RADIO_EVENT_ALL, BIOS_WAIT_FOREVER);
+
+#ifdef __CC1350_LAUNCHXL_BOARD_H__
+    /* Enable power to RF switch to 2.4G antenna */
+    PIN_setOutputValue(ledPinHandle, Board_DIO30_SWPWR, 1);
+#endif //__CC1350_LAUNCHXL_BOARD_H__
 
         /* If we should send ADC data */
         if (events & RADIO_EVENT_SEND_ADC_DATA)
@@ -286,6 +280,12 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
         if (advertiserType == Node_AdvertiserUrl) {
             sendBleAdvertisement(dmInternalTempSensorPacket);
         }
+
+#ifdef __CC1350_LAUNCHXL_BOARD_H__
+    /* Disable power to RF switch to 2.4G antenna */
+    PIN_setOutputValue(ledPinHandle, Board_DIO30_SWPWR, 0);
+#endif //__CC1350_LAUNCHXL_BOARD_H__
+
     }
 }
 
@@ -296,7 +296,7 @@ enum NodeRadioOperationStatus NodeRadioTask_sendAdcData(uint16_t data)
     /* Toggle activity LED */
     PIN_setOutputValue(ledPinHandle, NODE_SUB1_ACTIVITY_LED,!PIN_getOutputValue(NODE_SUB1_ACTIVITY_LED));
 
-    /* Get radio access sempahore */
+    /* Get radio access semaphore */
     Semaphore_pend(radioAccessSemHandle, BIOS_WAIT_FOREVER);
 
     /* Save data to send */
@@ -437,7 +437,7 @@ static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorP
     PIN_setOutputValue(ledPinHandle, NODE_BLE_ACTIVITY_LED,!PIN_getOutputValue(NODE_BLE_ACTIVITY_LED));
 
 #ifdef __CC1350_LAUNCHXL_BOARD_H__
-    //Swtich RF switch to 2.4G antenna
+    //Switch RF switch to 2.4G antenna
     PIN_setOutputValue(ledPinHandle, Board_DIO1_RFSW, 0);
 #endif //__CC1350_LAUNCHXL_BOARD_H__
 
@@ -446,7 +446,7 @@ static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorP
     char url_ready[21];
     sprintf(url_ready, url_format, nodeAddress);
     SEB_initUrl(url_ready , NODE_0M_TXPOWER);
-    SEB_initTLM(sensorPacket.batt, INT2FIXED(sensorPacket.internalTemp), sensorPacket.time100MiliSec/10);
+    SEB_initTLM(sensorPacket.batt, sensorPacket.temp, sensorPacket.time100MiliSec/10);
 
     for (txCnt = 0; txCnt < SimpleBeacon_AdvertisementTimes; txCnt++)
     {
@@ -464,7 +464,7 @@ static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorP
     }
 
 #ifdef __CC1350_LAUNCHXL_BOARD_H__
-    //Swtich RF switch to Sub1G antenna
+    //Switch RF switch to Sub1G antenna
     PIN_setOutputValue(ledPinHandle, Board_DIO1_RFSW, 1);
 #endif //__CC1350_LAUNCHXL_BOARD_H__
 

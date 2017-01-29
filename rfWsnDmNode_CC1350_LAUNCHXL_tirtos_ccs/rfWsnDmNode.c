@@ -39,7 +39,6 @@
 #include <ti/drivers/Power.h>
 #include <ti/drivers/power/PowerCC26XX.h>
 #include <ti/display/Display.h>
-#include <ti/drivers/UART.h>
 #include <ti/drivers/SPI.h>
 
 /* Board Header files */
@@ -57,9 +56,8 @@ int main(void)
     /* Call driver init functions. */
     Board_initGeneral();
 
-    /* Initialise the UART and SPI for the display driver. */
+    /* Initialize the SPI for the display driver. */
     Display_init();
-    UART_init();
     SPI_init();
 
     /* Initialize sensor node tasks */

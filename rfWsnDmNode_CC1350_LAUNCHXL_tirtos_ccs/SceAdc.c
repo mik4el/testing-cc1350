@@ -60,7 +60,7 @@ void SceAdc_init(void) {
     scifInit(&scifDriverSetup);
 
     // Setup period for checking ADC
-    uint16_t seconds = 60*10;
+    uint16_t seconds = 10;//60*10;
     uint16_t second_parts = 0;
     uint32_t period = (seconds << 16) | second_parts;
     scifStartRtcTicksNow(period);

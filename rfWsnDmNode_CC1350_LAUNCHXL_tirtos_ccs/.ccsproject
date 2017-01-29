@@ -14,4 +14,5 @@
 	<templateProperties value="id=rfWsnDmNode_CC1350_LAUNCHXL_tirtos_ccs.projectspec.rfWsnDmNode_CC1350_LAUNCHXL_tirtos_ccs,buildProfile=release,isHybrid=true,"/>
 	<origin value="/Users/mikaelandersson/ti/rfWsnDmNode_CC1350_LAUNCHXL_tirtos_ccs"/>
 	<filesToOpen value=""/>
+	<isTargetManual value="false"/>
 </projectOptions>

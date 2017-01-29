@@ -66,18 +66,9 @@
 #define NODE_TASK_STACK_SIZE 1024
 #define NODE_TASK_PRIORITY   3
 
-#define NODE_EVENT_ALL                  0xFFFFFFFF
+#define NODE_EVENT_ALL              0xFFFFFFFF
 #define NODE_EVENT_NEW_ADC_VALUE    (uint32_t)(1 << 0)
 #define NODE_EVENT_UPDATE_LCD       (uint32_t)(1 << 1)
-
-/* A change mask of 0xFF0 means that changes in the lower 4 bits does not trigger a wakeup. */
-#define NODE_ADCTASK_CHANGE_MASK                    0xFF0
-
-/* Minimum slow Report interval is 50s (in units of samplingTime)*/
-#define NODE_ADCTASK_REPORTINTERVAL_SLOW                50
-/* Minimum fast Report interval is 1s (in units of samplingTime) for 30s*/
-#define NODE_ADCTASK_REPORTINTERVAL_FAST                1
-#define NODE_ADCTASK_REPORTINTERVAL_FAST_DURIATION_MS   30000
 
 /***** Variable declarations *****/
 static Task_Params nodeTaskParams;
@@ -99,7 +90,6 @@ static PIN_State ledPinState;
 
 /* Display driver handles */
 static Display_Handle hDisplayLcd;
-static Display_Handle hDisplaySerial;
 
 /* Enable the 3.3V power domain used by the LCD */
 PIN_Config pinTable[] = {
@@ -152,23 +142,11 @@ static void nodeTaskFunction(UArg arg0, UArg arg1)
     Display_Params_init(&params);
     params.lineClearMode = DISPLAY_CLEAR_BOTH;
 
-    /* Open both an available LCD display and an UART display.
+    /* Open both an available LCD display
      * Whether the open call is successful depends on what is present in the
      * Display_config[] array of the board file.
-     *
-     * Note that for SensorTag evaluation boards combined with the SHARP96x96
-     * Watch DevPack, there is a pin conflict with UART such that one must be
-     * excluded, and UART is preferred by default. To display on the Watch
-     * DevPack, add the precompiler define BOARD_DISPLAY_EXCLUDE_UART.
      */
     hDisplayLcd = Display_open(Display_Type_LCD, &params);
-    hDisplaySerial = Display_open(Display_Type_UART, &params);
-
-    /* Check if the selected Display type was found and successfully opened */
-    if (hDisplaySerial)
-    {
-        Display_printf(hDisplaySerial, 0, 0, "Waiting for SCE ADC reading...");
-    }
 
     /* Check if the selected Display type was found and successfully opened */
     if (hDisplayLcd)
@@ -200,9 +178,6 @@ static void nodeTaskFunction(UArg arg0, UArg arg1)
         System_abort("Error registering button callback function");
     }
 
-    //Enable power to RF switch to 2.4G antenna
-    PIN_setOutputValue(ledPinHandle, Board_DIO30_SWPWR, 1);
-
     while (1)
     {
         /* Wait for event */
@@ -216,7 +191,7 @@ static void nodeTaskFunction(UArg arg0, UArg arg1)
             /* update display */
             updateLcd();
         }
-        /* If new ADC value, send this data */
+
         if (events & NODE_EVENT_UPDATE_LCD) {
             /* update display */
             updateLcd();
@@ -240,12 +215,6 @@ static void updateLcd(void)
     Display_printf(hDisplayLcd, 1, 0, "ADC: %04d", latestAdcValue);
     Display_printf(hDisplayLcd, 2, 0, "TempA: %3.3f", FIXED2DOUBLE(FLOAT2FIXED(convertADCToTempDouble(latestAdcValue))));  // Convert to match concentrator fixed 8.8 resolution
     Display_printf(hDisplayLcd, 3, 0, "TempI: %d", latestInternalTempValue);
-
-    /* print to UART clear screen, put cursor to beginning of terminal and print the header */
-    Display_printf(hDisplaySerial, 0, 0, "\033[2J \033[0;0HNode ID: 0x%02x", nodeAddress);
-    Display_printf(hDisplaySerial, 0, 0, "Node ADC Reading: %04d", latestAdcValue);
-
-    /* print to LCD */
     Display_printf(hDisplayLcd, 5, 0, "Mik4el");
 
     if (bleActive == Node_BLEActiveTypeActive) {
