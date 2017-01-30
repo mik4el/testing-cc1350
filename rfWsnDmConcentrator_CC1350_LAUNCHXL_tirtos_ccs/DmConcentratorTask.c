@@ -213,7 +213,6 @@ static void packetReceivedCallback(union ConcentratorPacket* packet, int8_t rssi
         latestActiveAdcSensorNode.address = packet->header.sourceAddress;
         latestActiveAdcSensorNode.latestTempValue = packet->dmSensorPacket.temp;
         latestActiveAdcSensorNode.latestInternalTempValue = packet->dmSensorPacket.internalTemp;
-        latestActiveAdcSensorNode.button = packet->dmSensorPacket.button;
         latestActiveAdcSensorNode.latestRssi = rssi;
 
         Event_post(concentratorEventHandle, CONCENTRATOR_EVENT_NEW_ADC_SENSOR_VALUE);

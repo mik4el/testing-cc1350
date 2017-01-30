@@ -242,9 +242,8 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
             prevTicks = currentTicks;
 
             dmInternalTempSensorPacket.batt = AONBatMonBatteryVoltageGet();
-            dmInternalTempSensorPacket.internalTemp = AONBatMonTemperatureGetDegC();
+            dmInternalTempSensorPacket.internalTemp = INT2FIXED((int16_t)AONBatMonTemperatureGetDegC());
             dmInternalTempSensorPacket.temp = FLOAT2FIXED(convertADCToTempDouble(adcData));
-            dmInternalTempSensorPacket.button = !PIN_getInputValue(Board_PIN_BUTTON0);
 
             sendDmPacket(dmInternalTempSensorPacket, NODERADIO_MAX_RETRIES, NORERADIO_ACK_TIMEOUT_TIME_MS);
         }
@@ -342,15 +341,12 @@ static void sendDmPacket(struct DualModeInternalTempSensorPacket sensorPacket, u
     currentRadioOperation.easyLinkTxPacket.payload[3] = (dmInternalTempSensorPacket.temp & 0xFF);
     currentRadioOperation.easyLinkTxPacket.payload[4] = (dmInternalTempSensorPacket.batt & 0xFF00) >> 8;
     currentRadioOperation.easyLinkTxPacket.payload[5] = (dmInternalTempSensorPacket.batt & 0xFF);
-    currentRadioOperation.easyLinkTxPacket.payload[6] = (dmInternalTempSensorPacket.internalTemp & 0xFF000000) >> 24;
-    currentRadioOperation.easyLinkTxPacket.payload[7] = (dmInternalTempSensorPacket.internalTemp & 0x00FF0000) >> 16;
-    currentRadioOperation.easyLinkTxPacket.payload[8] = (dmInternalTempSensorPacket.internalTemp & 0xFF00) >> 8;
-    currentRadioOperation.easyLinkTxPacket.payload[9] = (dmInternalTempSensorPacket.internalTemp & 0xFF);
-    currentRadioOperation.easyLinkTxPacket.payload[10] = (dmInternalTempSensorPacket.time100MiliSec & 0xFF000000) >> 24;
-    currentRadioOperation.easyLinkTxPacket.payload[11] = (dmInternalTempSensorPacket.time100MiliSec & 0x00FF0000) >> 16;
-    currentRadioOperation.easyLinkTxPacket.payload[12] = (dmInternalTempSensorPacket.time100MiliSec & 0xFF00) >> 8;
-    currentRadioOperation.easyLinkTxPacket.payload[13] = (dmInternalTempSensorPacket.time100MiliSec & 0xFF);
-    currentRadioOperation.easyLinkTxPacket.payload[14] = dmInternalTempSensorPacket.button;
+    currentRadioOperation.easyLinkTxPacket.payload[6] = (dmInternalTempSensorPacket.internalTemp & 0xFF00) >> 8;
+    currentRadioOperation.easyLinkTxPacket.payload[7] = (dmInternalTempSensorPacket.internalTemp & 0xFF);
+    currentRadioOperation.easyLinkTxPacket.payload[8] = (dmInternalTempSensorPacket.time100MiliSec & 0xFF000000) >> 24;
+    currentRadioOperation.easyLinkTxPacket.payload[9] = (dmInternalTempSensorPacket.time100MiliSec & 0x00FF0000) >> 16;
+    currentRadioOperation.easyLinkTxPacket.payload[10] = (dmInternalTempSensorPacket.time100MiliSec & 0xFF00) >> 8;
+    currentRadioOperation.easyLinkTxPacket.payload[11] = (dmInternalTempSensorPacket.time100MiliSec & 0xFF);
 
     currentRadioOperation.easyLinkTxPacket.len = sizeof(struct DualModeInternalTempSensorPacket);
 

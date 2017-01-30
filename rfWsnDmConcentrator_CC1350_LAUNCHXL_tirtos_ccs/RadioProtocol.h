@@ -60,9 +60,8 @@ struct DualModeInternalTempSensorPacket {
     struct PacketHeader header;
     uint16_t temp; //Fixed 8.8 notation
     uint16_t batt;
-    int32_t internalTemp;
+    uint16_t internalTemp; //Fixed 8.8 notation
     uint32_t time100MiliSec;
-    uint8_t button;
 };
 
 struct AckPacket {
