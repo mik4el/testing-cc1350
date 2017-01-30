@@ -5,7 +5,8 @@ The node:
 * Collects internal temp and temp from LMT70 hooked up to DIO25
 * Transmits and receives acks for 120b sensor packets over 868 MHz 625bps 14dBm
 * Can toggle to also send BLE data after pushing a button. Then sends BLE Eddystone URL + TLM beacons with latest received sensor data and sensor adress as part of URL.
-* Displays temp, internal temp, adress and beacon status on display and UART.
+* Displays temp, internal temp, adress and beacon status on display.
+* Verified sleep mode at around ~1uA.
 
 The concentrator:
 * Receives 120b sensor packets and transmits acks on 868 MHz 625bps 14dBm
