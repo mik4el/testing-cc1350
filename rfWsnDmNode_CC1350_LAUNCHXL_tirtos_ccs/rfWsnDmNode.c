@@ -47,7 +47,6 @@
 #include "DmNodeRadioTask.h"
 #include "DmNodeTask.h"
 
-
 /*
  *  ======== main ========
  */
@@ -60,7 +59,7 @@ int main(void)
     Display_init();
     SPI_init();
 
-    /* Initialize sensor node tasks */
+        /* Initialize sensor node tasks */
     NodeRadioTask_init();
     NodeTask_init();
 

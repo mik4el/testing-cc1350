@@ -48,6 +48,7 @@
 #include <ti/drivers/pin/PINCC26XX.h>
 #include <ti/display/Display.h>
 #include <ti/display/DisplayExt.h>
+#include "extflash/ExtFlash.h"
 
 /* Board Header files */
 #include "Board.h"
@@ -137,6 +138,10 @@ void NodeTask_init(void)
 
 static void nodeTaskFunction(UArg arg0, UArg arg1)
 {
+    /* Turn off external flash for low power */
+    ExtFlash_open();
+    ExtFlash_close();
+
     /* Initialize display and try to open both UART and LCD types of display. */
     Display_Params params;
     Display_Params_init(&params);
@@ -247,10 +252,10 @@ void buttonCallback(PIN_Handle handle, PIN_Id pinId)
     {
         if (bleActive == Node_BLEActiveTypeActive) {
             bleActive = Node_BLEActiveTypeNotActive;
+            Event_post(nodeEventHandle, NODE_EVENT_UPDATE_LCD);
         } else {
             bleActive = Node_BLEActiveTypeActive;
         }
-        Event_post(nodeEventHandle, NODE_EVENT_UPDATE_LCD);
         NodeRadioTask_toggleBLE();
         if (bleActive == Node_BLEActiveTypeActive) {
             Event_post(nodeEventHandle, NODE_EVENT_NEW_ADC_VALUE);

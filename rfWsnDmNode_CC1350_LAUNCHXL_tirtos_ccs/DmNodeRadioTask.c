@@ -277,10 +277,6 @@ static void nodeRadioTaskFunction(UArg arg0, UArg arg1)
             returnRadioOperationStatus(NodeRadioStatus_Failed);
         }
 
-        if (advertiserType == Node_AdvertiserUrl) {
-            sendBleAdvertisement(dmInternalTempSensorPacket);
-        }
-
 #ifdef __CC1350_LAUNCHXL_BOARD_H__
     /* Disable power to RF switch to 2.4G antenna */
     PIN_setOutputValue(ledPinHandle, Board_DIO30_SWPWR, 0);
@@ -316,6 +312,10 @@ enum NodeRadioOperationStatus NodeRadioTask_sendAdcData(uint16_t data)
 
     /* Toggle activity LED */
     PIN_setOutputValue(ledPinHandle, NODE_SUB1_ACTIVITY_LED,!PIN_getOutputValue(NODE_SUB1_ACTIVITY_LED));
+
+    if (advertiserType == Node_AdvertiserUrl) {
+        sendBleAdvertisement(dmInternalTempSensorPacket);
+    }
 
     return status;
 }
