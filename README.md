@@ -25,6 +25,4 @@ The concentrator:
 1. Debug!
 
 ## Todos
-* Measure current on both node and concentrator.
-* Sleep node heavily. Measure current on node again.
 * Printfs should print floats with 2 decimals.
