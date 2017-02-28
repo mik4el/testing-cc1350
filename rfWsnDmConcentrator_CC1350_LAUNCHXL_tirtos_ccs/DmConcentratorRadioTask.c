@@ -356,8 +356,15 @@ static void sendBleAdvertisement(struct DualModeInternalTempSensorPacket sensorP
     sprintf(url_ready, url_format, sensorPacket.header.sourceAddress);
     SEB_initUrl(url_ready , CONCENTRATOR_0M_TXPOWER);
     uint32_t timeSinceLastRx = 0;
+
     if (timeForLastRXForAdress(sensorPacket.header.sourceAddress)!=0) {
-        timeSinceLastRx = ((Clock_getTicks() * Clock_tickPeriod) / 1000000) - timeForLastRXForAdress(sensorPacket.header.sourceAddress);
+        uint32_t now = ((Clock_getTicks() * Clock_tickPeriod) / 1000000);
+        // handle wrap around
+        if (now > timeForLastRXForAdress(sensorPacket.header.sourceAddress)) {
+            timeSinceLastRx = now - timeForLastRXForAdress(sensorPacket.header.sourceAddress);
+        } else {
+            timeSinceLastRx = timeForLastRXForAdress(sensorPacket.header.sourceAddress) - now;
+        }
     }
 
     SEB_initTLM(sensorPacket.batt, sensorPacket.temp, timeSinceLastRx);

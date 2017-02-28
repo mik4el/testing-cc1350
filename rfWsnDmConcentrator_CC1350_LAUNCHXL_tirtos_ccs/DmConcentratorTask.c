@@ -277,7 +277,7 @@ static void updateLcd(void) {
 
     Display_clear(hDisplayLcd);
     Display_printf(hDisplayLcd, 0, 0, "Mik4el");
-    Display_printf(hDisplayLcd, 2, 0, "Nodes TempA RSSI");
+    Display_printf(hDisplayLcd, 2, 0, "Nodes TempA");
 
     //clear screen, put cursor to beginning of terminal and print the header
     Display_printf(hDisplaySerial, 0, 0, "\033[2J \033[0;0HNodes    Value    RSSI");
@@ -299,13 +299,22 @@ static void updateLcd(void) {
             selectedChar = ' ';
         }
 
+        double tempFormatted = FIXED2DOUBLE(nodePointer->latestTempValue);
+        if (tempFormatted > 128.0) {
+            tempFormatted = tempFormatted - 256.0; //display negative temperature correct
+        }
+
         /* print to LCD */
-        Display_printf(hDisplayLcd, currentLcdLine, 0, "%c0x%02x %f %04d", selectedChar,
-                nodePointer->address, FIXED2DOUBLE(nodePointer->latestTempValue), nodePointer->latestRssi);
+        Display_printf(hDisplayLcd, currentLcdLine, 0, "%c0x%02x %2f", selectedChar,
+                nodePointer->address, tempFormatted);
+
+        currentLcdLine++;
+
+        Display_printf(hDisplayLcd, currentLcdLine, 0, "RSSI: %04d", nodePointer->latestRssi);
 
         /* print to UART */
-        Display_printf(hDisplayLcd, currentLcdLine, 0, "%c0x%02x %f %04d", selectedChar,
-                nodePointer->address, FIXED2DOUBLE(nodePointer->latestTempValue), nodePointer->latestRssi);
+        Display_printf(hDisplaySerial, currentLcdLine, 0, "%c0x%02x %02f %04d", selectedChar,
+                nodePointer->address, tempFormatted, nodePointer->latestRssi);
 
         nodePointer++;
         currentLcdLine++;
@@ -315,19 +324,6 @@ static void updateLcd(void) {
     if (currentLcdLine > 1)
     {
         char advMode[16] = {0};
-
-        /* print button status */
-        if (knownSensorNodes[selectedNode].button)
-        {
-            Display_printf(hDisplayLcd, currentLcdLine, 0, "Button Pressed");
-            Display_printf(hDisplaySerial, 0, 0, "Button Pressed");
-        }
-        else
-        {
-            Display_printf(hDisplayLcd, currentLcdLine, 0, "No Button Press");
-            Display_printf(hDisplaySerial, 0, 0, "No Button Pressed");
-        }
-
 
         if (advertiser.type == Concentrator_AdvertiserUrl)
         {
@@ -340,7 +336,7 @@ static void updateLcd(void) {
         }
 
         /* print to LCD */
-        Display_printf(hDisplayLcd, currentLcdLine+2, 0, "Beacon: %s", advMode);
+        Display_printf(hDisplayLcd, currentLcdLine+1, 0, "Beacon: %s", advMode);
         /* print to UART */
         Display_printf(hDisplaySerial, 0, 0, "Advertiser Mode: %s", advMode);
     }
