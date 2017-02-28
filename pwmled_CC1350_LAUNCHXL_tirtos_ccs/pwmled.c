@@ -51,8 +51,12 @@ void *mainThread(void *arg0)
 {
     /* Period and duty in microseconds */
     uint16_t   pwmPeriod = 3000;
-    uint16_t   duty = 0;
-    uint16_t   dutyInc = 100;
+    uint16_t   duty_1 = 0;
+    uint16_t   duty_2 = 0;
+    uint16_t   duty_3 = 0;
+    uint16_t   dutyInc_1 = 100;
+    uint16_t   dutyInc_2 = 100;
+    uint16_t   dutyInc_3 = 100;
 
     /* Sleep time in microseconds */
     uint32_t   time = 50000;
@@ -101,20 +105,32 @@ void *mainThread(void *arg0)
 
     /* Loop forever incrementing the PWM duty */
     while (1) {
-        PWM_setDuty(pwm1, duty);
+        PWM_setDuty(pwm1, duty_1);
 
         if (pwm2) {
-            PWM_setDuty(pwm2, duty);
+            PWM_setDuty(pwm2, duty_2);
         }
 
         if (pwm3) {
-            PWM_setDuty(pwm3, duty);
+            PWM_setDuty(pwm3, duty_3);
         }
 
-        duty = (duty + dutyInc);
+        duty_1 = (duty_1 + dutyInc_1);
 
-        if (duty == pwmPeriod || (!duty)) {
-            dutyInc = - dutyInc;
+        if (duty_1 == pwmPeriod || (!duty_1)) {
+            dutyInc_1 = - dutyInc_1;
+        }
+
+        duty_2 = (duty_2 - dutyInc_2);
+
+        if (duty_2 == pwmPeriod || (!duty_2)) {
+            dutyInc_2 = + dutyInc_2;
+        }
+
+        duty_3 = (duty_3 + 2*dutyInc_3);
+
+        if (duty_3 == pwmPeriod || (!duty_3)) {
+            dutyInc_3 = - 2*dutyInc_3;
         }
 
         usleep(time);
